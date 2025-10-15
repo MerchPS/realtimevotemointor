@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vote Comparator — All Submissions</title>
+<title>Vote Comparator — Real Data</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
@@ -89,8 +89,8 @@
   <div class="container">
     <header>
       <div>
-        <h1>Vote Comparator — All Submissions</h1>
-        <p class="lead">Realtime tracking for all 8 submissions. Auto-update every <strong>3s</strong>.</p>
+        <h1>Vote Comparator — Real Data</h1>
+        <p class="lead">Realtime tracking with ACTUAL data from motionimefest.id</p>
       </div>
       <div style="text-align:right">
         <div style="font-size:12px;color:var(--muted)">Status:</div>
@@ -100,6 +100,7 @@
 
     <div class="controls">
       <button id="refreshBtn" class="btn">🔄 Refresh Now</button>
+      <button id="copyScriptBtn" class="btn">📋 Copy Console Script</button>
     </div>
 
     <div class="submissions-grid" id="submissionsGrid">
@@ -123,37 +124,50 @@
         <div class="small muted">Last update</div>
         <div id="lastUpdate" style="font-weight:700;font-size:14px">—</div>
       </div>
+      <div class="stat">
+        <div class="small muted">Data Source</div>
+        <div id="dataSource" style="font-weight:700;font-size:14px">Console Script</div>
+      </div>
     </div>
 
     <div style="margin-top:12px" class="card">
-      <div class="small muted">Console log</div>
-      <div id="console" class="log"></div>
+      <div class="small muted">Instructions & Console Log</div>
+      <div id="console" class="log">
+📋 <strong>HOW TO USE:</strong>
+1. Open motionimefest.id in your browser
+2. Press F12 to open Developer Tools
+3. Go to Console tab
+4. Paste and run the script from "Copy Console Script" button
+5. Come back here and click "Refresh Now"
+
+🔧 <strong>Alternative:</strong>
+- Install Tampermonkey browser extension
+- Create a user script that injects this page into motionimefest.id
+      </div>
     </div>
 
     <footer>
-      <div class="small muted">Using mock data for demonstration. For real data, host on same domain.</div>
+      <div class="small muted">Uses real data from motionimefest.id. Run the console script on the actual website.</div>
     </footer>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
   (function(){
-    // CONFIG
-    const INTERVAL_MS = 3000;
+    const INTERVAL_MS = 5000;
     
-    // All 8 submissions
     const SUBMISSIONS = [
       { id: "24087", name: "xxknjt" },
-      { id: "24084", name: "ini boo" },
+      { id: "24084", name: "boo" },
       { id: "24081", name: "JustDani" },
       { id: "24078", name: "SonMV" },
       { id: "24075", name: "KekeLawar" },
-      { id: "24072", name: "Yaraayay" },
-      { id: "24069", name: "Wasawho" },
-      { id: "24066", name: "searchforemma" }
+      { id: "24066", name: "searchforemma" },
+      { id: "24072", name: "YaraYay" },
+      { id: "24069", name: "Wasawho" }
     ];
 
-    // DOM
+    // DOM elements
     const statusEl = document.getElementById('status');
     const logEl = document.getElementById('console');
     const submissionsGridEl = document.getElementById('submissionsGrid');
@@ -161,58 +175,86 @@
     const sessionDeltaEl = document.getElementById('sessionDelta');
     const lastUpdateEl = document.getElementById('lastUpdate');
     const refreshBtn = document.getElementById('refreshBtn');
+    const copyScriptBtn = document.getElementById('copyScriptBtn');
 
-    // state
+    // State
     let lastVotes = {};
     let lastTime = null;
     let sessionDelta = {};
     let historyLabels = [];
     let historyData = {};
+    let currentData = {};
 
     // Initialize state
     SUBMISSIONS.forEach(sub => {
       lastVotes[sub.id] = null;
       sessionDelta[sub.id] = 0;
       historyData[sub.id] = [];
+      currentData[sub.id] = { votes: null, views: null };
     });
 
-    // Base votes for mock data
-    const baseVotes = {
-      '24087': 1250, '24084': 1100, '24081': 980, '24078': 1350,
-      '24075': 890, '24072': 1500, '24069': 1420, '24066': 760
-    };
-
-    // helper: log
-    function clog(msg){
+    function clog(msg) {
       const ts = new Date().toLocaleTimeString();
-      logEl.innerText = `[${ts}] ${msg}\n` + logEl.innerText;
-      if(logEl.innerText.split('\n').length > 20) {
-        logEl.innerText = logEl.innerText.split('\n').slice(0, 15).join('\n');
-      }
+      logEl.innerHTML = `<div>[${ts}] ${msg}</div>` + logEl.innerHTML;
     }
 
-    // Get mock data with realistic changes
-    function getMockData(subId) {
-      // Start with base votes
-      let votes = baseVotes[subId];
-      
-      // If we have previous data, continue from there
-      if (lastVotes[subId] !== null) {
-        votes = lastVotes[subId];
-      }
-      
-      // Random vote increase (0-3 votes per update)
-      const increase = Math.floor(Math.random() * 4);
-      votes += increase;
-      
-      // Calculate views (roughly 3-5x votes)
-      const views = votes * (3 + Math.random() * 2);
-      
-      return {
-        votes: votes,
-        views: Math.floor(views)
-      };
+    // Console script for manual data fetching
+    const consoleScript = `(async () => {
+  console.clear();
+  console.log("📊 Motion Ime Fest - Real-time Vote Tracker\\n");
+
+  const submissions = [
+    { id: 24087, name: "xxknjt" },
+    { id: 24084, name: "boo" },
+    { id: 24081, name: "JustDani" },
+    { id: 24078, name: "SonMV" },
+    { id: 24075, name: "KekeLawar" },
+    { id: 24066, name: "searchforemma" },
+    { id: 24072, name: "YaraYay" },
+    { id: 24069, name: "Wasawho" }
+  ];
+
+  const BASE = "https://motionimefest.id/contest/newcomer-streamer-of-the-year/submission";
+
+  async function fetchVote(sub) {
+    const url = \`\${BASE}/\${sub.id}/?cid=23816&cm=1&_\${Date.now()}\`;
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      const html = await res.text();
+      const voteMatch = html.match(/([\\\\d,.]+)\\\\s*Votes/i);
+      const viewMatch = html.match(/([\\\\d,.]+)\\\\s*Views/i);
+      const votes = voteMatch ? parseInt(voteMatch[1].replace(/[,.]/g, "")) : 0;
+      const views = viewMatch ? parseInt(viewMatch[1].replace(/[,.]/g, "")) : 0;
+      return { ...sub, votes, views, success: true };
+    } catch (err) {
+      return { ...sub, error: err.message, success: false };
     }
+  }
+
+  console.log("🕒 Fetching real-time data...");
+  const results = await Promise.all(submissions.map(fetchVote));
+  
+  // Format results for the tracker
+  const output = {
+    timestamp: new Date().toLocaleTimeString(),
+    data: {}
+  };
+  
+  console.log("\\\\n📅 Last Update:", output.timestamp, "\\\\n");
+  
+  results.forEach(r => {
+    output.data[r.id] = { votes: r.votes, views: r.views };
+    if (r.error) {
+      console.log(\`❌ \${r.name}: \${r.error}\`);
+    } else {
+      console.log(\`📊 \${r.name.padEnd(12)} | Votes: \${r.votes.toLocaleString()} | Views: \${r.views.toLocaleString()}\`);
+    }
+  });
+
+  console.log("\\\\n✅ Copy the object below and paste in the tracker:");
+  console.log(JSON.stringify(output, null, 2));
+  console.log("\\\\n💡 Paste the above object in the tracker input field or use auto-sync if available.");
+})();`;
 
     // Create submission cards
     function createSubmissionCards() {
@@ -229,7 +271,7 @@
               <div id="views-${sub.id}" class="small muted">— views</div>
             </div>
             <div class="submission-delta">
-              <div class="small muted">Δ per 3s</div>
+              <div class="small muted">Δ</div>
               <div id="delta-${sub.id}" class="small">—</div>
               <div class="small muted" style="margin-top:6px">Rate (v/s)</div>
               <div id="rate-${sub.id}" class="small">—</div>
@@ -240,9 +282,10 @@
       });
     }
 
-    // UI update function
-    function updateUI(data){
-      // Update individual submission cards
+    // Update UI with new data
+    function updateUI(data) {
+      const now = Date.now();
+      
       SUBMISSIONS.forEach(sub => {
         const votesEl = document.getElementById(`votes-${sub.id}`);
         const viewsEl = document.getElementById(`views-${sub.id}`);
@@ -250,191 +293,194 @@
         const rateEl = document.getElementById(`rate-${sub.id}`);
         
         const subData = data[sub.id];
-        if (subData) {
+        if (subData && subData.votes !== null) {
+          // Update displayed values
           votesEl.innerText = subData.votes.toLocaleString();
           viewsEl.innerText = subData.views.toLocaleString() + ' views';
           
           // Calculate delta
           let delta = 0;
-          if(lastVotes[sub.id] !== null) {
+          if (lastVotes[sub.id] !== null) {
             delta = subData.votes - lastVotes[sub.id];
           }
-          deltaEl.innerText = (delta >= 0 ? '+' + delta : delta);
+          deltaEl.innerText = delta >= 0 ? `+${delta}` : `${delta}`;
           deltaEl.className = delta > 0 ? 'small delta-up' : (delta < 0 ? 'small delta-down' : 'small');
           
           // Calculate rate
           let rate = 0;
-          if(lastTime !== null && delta > 0) {
-            const elapsedSec = (Date.now() - lastTime) / 1000;
+          if (lastTime !== null && delta > 0) {
+            const elapsedSec = (now - lastTime) / 1000;
             rate = delta / elapsedSec;
           }
           rateEl.innerText = rate > 0 ? rate.toFixed(4) : '0.0000';
+          
+          // Update session delta
+          if (delta > 0) {
+            sessionDelta[sub.id] += delta;
+          }
+          
+          // Store current vote count
+          lastVotes[sub.id] = subData.votes;
         }
       });
-
-      // Update session delta
-      let sessionText = "";
-      SUBMISSIONS.forEach(sub => {
-        if (sessionDelta[sub.id] !== 0) {
-          if (sessionText) sessionText += " | ";
-          sessionText += `${sub.name}: ${sessionDelta[sub.id] > 0 ? '+' : ''}${sessionDelta[sub.id]}`;
-        }
-      });
-      sessionDeltaEl.innerText = sessionText || "No changes yet";
 
       // Update leader
-      const validData = SUBMISSIONS.filter(sub => data[sub.id]);
+      const validData = SUBMISSIONS.filter(sub => 
+        data[sub.id] && data[sub.id].votes !== null
+      );
       
       if (validData.length > 0) {
         const leader = validData.reduce((prev, curr) => 
           data[prev.id].votes > data[curr.id].votes ? prev : curr
         );
         const leaderVotes = data[leader.id].votes;
-        
         leadTextEl.innerHTML = `${leader.name} leading with <strong>${leaderVotes.toLocaleString()}</strong> votes`;
       }
 
+      // Update session delta display
+      let sessionText = "";
+      SUBMISSIONS.forEach(sub => {
+        if (sessionDelta[sub.id] > 0) {
+          if (sessionText) sessionText += " | ";
+          sessionText += `${sub.name}: +${sessionDelta[sub.id]}`;
+        }
+      });
+      sessionDeltaEl.innerText = sessionText || "No changes yet";
+
       lastUpdateEl.innerText = new Date().toLocaleTimeString();
+      lastTime = now;
     }
 
-    // Chart.js setup
-    const ctx = document.getElementById('votesChart').getContext('2d');
-    
-    const colors = [
-      '#6bc1ff', '#ff6b6b', '#6ee7b7', '#f59e0b', '#a78bfa', 
-      '#f97316', '#10b981', '#8b5cf6'
-    ];
-    
-    const chartDatasets = SUBMISSIONS.map((sub, index) => ({
-      label: `${sub.name}`,
-      data: historyData[sub.id],
-      borderColor: colors[index % colors.length],
-      backgroundColor: colors[index % colors.length] + '20',
-      tension: 0.2,
-      pointRadius: 2,
-      borderWidth: 2
-    }));
-    
-    const chart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: historyLabels,
-        datasets: chartDatasets
-      },
-      options: {
-        animation: false,
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: { 
-            display: true,
-            ticks: { maxTicksLimit: 8 }
-          },
-          y: { 
-            display: true,
-            beginAtZero: false,
-            title: { display: true, text: 'Votes' } 
-          }
-        },
-        plugins: { 
-          legend: { 
-            display: true,
-            labels: {
-              boxWidth: 12,
-              font: { size: 11 }
-            }
-          } 
-        }
-      }
-    });
-
-    // main polling function
-    function pollOnce(){
-      const startTime = performance.now();
-      
+    // Process data from console script output
+    function processConsoleData(output) {
       try {
-        const data = {};
-        const now = Date.now();
-        
-        // Get data for all submissions
-        SUBMISSIONS.forEach(sub => {
-          const mockData = getMockData(sub.id);
-          data[sub.id] = mockData;
-          
-          // Compute deltas
-          let delta = 0;
-          if(lastTime !== null && lastVotes[sub.id] !== null){
-            delta = mockData.votes - lastVotes[sub.id];
-          }
-          
-          // Update session totals
-          if(delta > 0) {
-            sessionDelta[sub.id] += delta;
-          }
-          
-          // Update last votes
-          lastVotes[sub.id] = mockData.votes;
-        });
-        
-        // Push history
-        const label = new Date().toLocaleTimeString();
-        historyLabels.push(label);
-        
-        SUBMISSIONS.forEach(sub => {
-          historyData[sub.id].push(data[sub.id].votes);
-        });
-        
-        // Keep history limited
-        if(historyLabels.length > 30){ 
-          historyLabels.shift(); 
-          SUBMISSIONS.forEach(sub => {
-            historyData[sub.id].shift();
+        const data = JSON.parse(output);
+        if (data.data) {
+          // Update current data
+          Object.keys(data.data).forEach(id => {
+            if (currentData[id]) {
+              currentData[id] = data.data[id];
+            }
           });
+          
+          // Update history for chart
+          const label = new Date().toLocaleTimeString();
+          historyLabels.push(label);
+          
+          SUBMISSIONS.forEach(sub => {
+            historyData[sub.id].push(currentData[sub.id].votes);
+          });
+          
+          // Keep history limited
+          if (historyLabels.length > 30) {
+            historyLabels.shift();
+            SUBMISSIONS.forEach(sub => {
+              historyData[sub.id].shift();
+            });
+          }
+          
+          // Update chart
+          if (window.chart) {
+            window.chart.data.labels = historyLabels;
+            SUBMISSIONS.forEach((sub, index) => {
+              window.chart.data.datasets[index].data = historyData[sub.id];
+            });
+            window.chart.update('none');
+          }
+          
+          // Update UI
+          updateUI(currentData);
+          
+          clog(`✅ Data updated from console script - ${data.timestamp}`);
+          statusEl.innerText = `OK - Real data loaded`;
         }
-
-        // Update chart
-        chart.data.labels = historyLabels;
-        SUBMISSIONS.forEach((sub, index) => {
-          chart.data.datasets[index].data = historyData[sub.id];
-        });
-        chart.update('none');
-
-        // Update UI
-        updateUI(data);
-
-        // Update last time
-        lastTime = now;
-
-        const elapsedMs = Math.round(performance.now() - startTime);
-        statusEl.innerText = `OK - ${elapsedMs}ms`;
-        
-        clog(`Update completed - ${elapsedMs}ms`);
-        
-      } catch(err) {
-        statusEl.innerText = 'Error: ' + err.message;
-        clog('Error: ' + err.message);
+      } catch (e) {
+        clog(`❌ Invalid data format: ${e.message}`);
       }
+    }
+
+    // Initialize Chart.js
+    function initializeChart() {
+      const ctx = document.getElementById('votesChart').getContext('2d');
+      const colors = [
+        '#6bc1ff', '#ff6b6b', '#6ee7b7', '#f59e0b', '#a78bfa', 
+        '#f97316', '#10b981', '#8b5cf6'
+      ];
+      
+      const chartDatasets = SUBMISSIONS.map((sub, index) => ({
+        label: `${sub.name}`,
+        data: historyData[sub.id],
+        borderColor: colors[index % colors.length],
+        backgroundColor: colors[index % colors.length] + '20',
+        tension: 0.2,
+        pointRadius: 2,
+        borderWidth: 2
+      }));
+      
+      window.chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: historyLabels,
+          datasets: chartDatasets
+        },
+        options: {
+          animation: false,
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { 
+              display: true,
+              ticks: { maxTicksLimit: 8 }
+            },
+            y: { 
+              display: true,
+              beginAtZero: false,
+              title: { display: true, text: 'Votes' } 
+            }
+          },
+          plugins: { 
+            legend: { 
+              display: true,
+              labels: {
+                boxWidth: 12,
+                font: { size: 11 }
+              }
+            } 
+          }
+        }
+      });
     }
 
     // Event listeners
     refreshBtn.addEventListener('click', () => {
-      clog("Manual refresh");
-      pollOnce();
+      clog("Manual refresh requested");
+      statusEl.innerText = "Run console script on motionimefest.id";
     });
 
-    // Initialize application
+    copyScriptBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(consoleScript).then(() => {
+        clog("✅ Console script copied to clipboard!");
+        clog("Now go to motionimefest.id, open Console (F12), paste and run the script");
+      });
+    });
+
+    // Data input handler for manual paste
+    window.handleDataInput = function(dataString) {
+      processConsoleData(dataString);
+    };
+
+    // Initialize app
     function initializeApp() {
       createSubmissionCards();
-      clog("Vote Comparator started with mock data");
-      
-      // First poll
-      pollOnce();
-      
-      // Start auto-update
-      setInterval(pollOnce, INTERVAL_MS);
+      initializeChart();
+      clog("🚀 Real-time Vote Tracker Ready!");
+      clog("1. Click 'Copy Console Script'");
+      clog("2. Go to motionimefest.id");
+      clog("3. Open Console (F12) and paste the script");
+      clog("4. Run it and copy the output");
+      clog("5. Use handleDataInput(paste_here) in console");
     }
 
-    // Start the application
     initializeApp();
 
   })();
