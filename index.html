@@ -16,9 +16,7 @@
   header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
   h1{margin:0;font-size:20px}
   p.lead{margin:4px 0 0;color:var(--muted);font-size:13px}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
   .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.04);padding:12px;border-radius:10px;box-shadow:0 8px 30px rgba(2,6,23,0.6)}
-  .card h3{margin:0 0 6px;font-size:14px}
   .big{font-size:28px;font-weight:700}
   .small{color:var(--muted);font-size:12px}
   .delta-up{color:#6ee7b7;font-weight:700}
@@ -66,7 +64,6 @@
   }
   
   @media (max-width: 860px) { 
-    .grid{grid-template-columns:1fr} 
     .submissions-grid { grid-template-columns: repeat(2, 1fr); }
   }
   @media (max-width: 480px) { 
@@ -79,7 +76,7 @@
     <header>
       <div>
         <h1>Vote Comparator — All Submissions</h1>
-        <p class="lead">Realtime tracking for all 8 submissions. Auto-update every <strong>2.5s</strong>.</p>
+        <p class="lead">Realtime tracking for all 8 submissions. Auto-update every <strong>5s</strong>.</p>
       </div>
       <div style="text-align:right">
         <div style="font-size:12px;color:var(--muted)">Status:</div>
@@ -110,8 +107,8 @@
         <div id="lastUpdate" style="font-weight:700;font-size:14px">—</div>
       </div>
       <div class="stat">
-        <div class="small muted">Notes</div>
-        <div id="notes" style="font-size:13px">Using pre-flight requests to ensure data freshness.</div>
+        <div class="small muted">Active Submissions</div>
+        <div id="activeCount" style="font-weight:700;font-size:14px">0/8</div>
       </div>
     </div>
 
@@ -121,7 +118,7 @@
     </div>
 
     <footer>
-      <div class="small muted">Using pre-flight requests to ensure data freshness. If data doesn't update: site blocked CORS/Cloudflare.</div>
+      <div class="small muted">Using sequential fetching with delays to avoid blocking. If data doesn't update, try refreshing.</div>
     </footer>
   </div>
 
@@ -129,8 +126,8 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
   (function(){
-    // CONFIG
-    const INTERVAL_MS = 2500; // 2.5s
+    // CONFIG - Increased interval to reduce load
+    const INTERVAL_MS = 5000; // 5s
     
     // All 8 submissions
     const SUBMISSIONS = [
@@ -144,19 +141,17 @@
       { id: "24066", name: "searchforemma" }
     ];
     
-    // URLs for pre-flight requests
-    const PREFLIGHT_URLS = [
-      "https://motionimefest.id/contest/newcomer-streamer-of-the-year/participate/?cid=23816&cm=1",
-      "https://motionimefest.id/contest/newcomer-streamer-of-the-year/submissions/?cid=23816&cm=1&sd=desc&sb=date&cpn=1"
-    ];
+    // Single pre-flight URL (reduced from multiple)
+    const PREFLIGHT_URL = "https://motionimefest.id/contest/newcomer-streamer-of-the-year/submissions/?cid=23816&cm=1&sd=desc&sb=date&cpn=1";
     
     const URL_TEMPLATE = (id) => `https://motionimefest.id/contest/newcomer-streamer-of-the-year/submission/${id}/?cid=23816&cm=1`;
 
-    // Public CORS proxies (used as fallback if direct fetch blocked)
+    // Enhanced CORS proxies list
     const PROXY_LIST = [
       url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
       url => `https://thingproxy.freeboard.io/fetch/${url}`,
-      url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+      url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
     ];
 
     // DOM
@@ -166,6 +161,7 @@
     const leadTextEl = document.getElementById('leadText');
     const sessionDeltaEl = document.getElementById('sessionDelta');
     const lastUpdateEl = document.getElementById('lastUpdate');
+    const activeCountEl = document.getElementById('activeCount');
 
     // state
     let lastVotes = {};
@@ -173,6 +169,7 @@
     let sessionDelta = {};
     let historyLabels = [];
     let historyData = {};
+    let activeSubmissions = 0;
 
     // Initialize state
     SUBMISSIONS.forEach(sub => {
@@ -185,78 +182,143 @@
     function clog(msg){
       const ts = new Date().toLocaleTimeString();
       logEl.innerText = `[${ts}] ${msg}\n` + logEl.innerText;
+      // Keep log from getting too long
+      if(logEl.innerText.split('\n').length > 50) {
+        logEl.innerText = logEl.innerText.split('\n').slice(0, 40).join('\n');
+      }
     }
 
     // helper: parse numbers like "3,768" or "90.123"
     function parseNumber(s){
       if(!s) return null;
-      const digits = s.replace(/[^\d]/g, '');
+      // Handle both "1,234" and "1234" formats
+      const clean = s.replace(/,/g, '');
+      const digits = clean.replace(/[^\d]/g, '');
       return digits ? parseInt(digits,10) : null;
     }
 
-    // parse votes/views from fetched HTML string (simple extraction)
+    // Improved parsing function
     function extractVotesViews(html){
-      // get plain text
-      const tmp = document.createElement('div');
-      tmp.innerHTML = html;
-      const text = tmp.textContent || tmp.innerText || '';
-      // try find "<num> Votes" and "<num> Views"
-      const vMatch = text.match(/([\d\.,]+)\s*Votes/i);
-      const wMatch = text.match(/([\d\.,]+)\s*Views/i);
-      const votes = vMatch ? parseNumber(vMatch[1]) : null;
-      const views = wMatch ? parseNumber(wMatch[1]) : null;
-      return {votes, views};
-    }
-
-    // attempt fetch with direct then fallback to proxies
-    async function fetchWithFallback(url){
-      // try direct
-      try{
-        const r = await fetch(url, {method:'GET', mode:'cors'});
-        if(r.ok){
-          const txt = await r.text();
-          // quick check: do we see "Votes" string?
-          if(/Votes/i.test(txt)) return {html: txt, usedProxy:false};
-          clog('Direct fetch returned but no "Votes" text found; will fallback');
-        } else {
-          clog(`Direct fetch status ${r.status}; fallback`);
-        }
-      }catch(e){
-        clog('Direct fetch failed: ' + e.message);
-      }
-      // fallback proxies in order
-      for(const p of PROXY_LIST){
-        const purl = p(url);
-        try{
-          const r2 = await fetch(purl, {method:'GET'});
-          if(r2.ok){
-            const txt2 = await r2.text();
-            if(/Votes/i.test(txt2)){
-              clog(`Fetched via proxy: ${purl}`);
-              return {html: txt2, usedProxy:true, proxyUrl:purl};
-            } else {
-              clog(`Proxy ${purl} responded but no Votes text`);
-            }
-          } else {
-            clog(`Proxy ${purl} status ${r2.status}`);
+      try {
+        // More robust parsing
+        const tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        const text = tmp.textContent || tmp.innerText || '';
+        
+        // Multiple patterns to find votes
+        const votePatterns = [
+          /([\d,]+)\s*Votes?/i,
+          /Votes?\s*([\d,]+)/i,
+          /"votes?"\s*:\s*"([\d,]+)"/i,
+          /vote_count["']?\s*:\s*["']?([\d,]+)/i
+        ];
+        
+        // Multiple patterns to find views
+        const viewPatterns = [
+          /([\d,]+)\s*Views?/i,
+          /Views?\s*([\d,]+)/i,
+          /"views?"\s*:\s*"([\d,]+)"/i,
+          /view_count["']?\s*:\s*["']?([\d,]+)/i
+        ];
+        
+        let votes = null, views = null;
+        
+        // Try each vote pattern
+        for(const pattern of votePatterns) {
+          const match = text.match(pattern);
+          if(match) {
+            votes = parseNumber(match[1]);
+            if(votes !== null) break;
           }
-        }catch(e){
-          clog(`Proxy ${purl} failed: ${e.message}`);
         }
+        
+        // Try each view pattern
+        for(const pattern of viewPatterns) {
+          const match = text.match(pattern);
+          if(match) {
+            views = parseNumber(match[1]);
+            if(views !== null) break;
+          }
+        }
+        
+        return {votes, views};
+      } catch(e) {
+        clog(`Error parsing HTML: ${e.message}`);
+        return {votes: null, views: null};
       }
-      throw new Error('All fetch attempts failed or content not found');
     }
 
-    // Make pre-flight requests to ensure data freshness
-    async function makePreflightRequests() {
-      clog("Making pre-flight requests...");
-      for (const url of PREFLIGHT_URLS) {
+    // Enhanced fetch with better error handling
+    async function fetchWithFallback(url, attempt = 0){
+      const maxAttempts = 3;
+      
+      // Try direct first
+      if(attempt === 0) {
         try {
-          await fetchWithFallback(url);
-          clog(`Pre-flight to ${url} completed`);
-        } catch (e) {
-          clog(`Pre-flight to ${url} failed: ${e.message}`);
+          const r = await fetch(url, {
+            method: 'GET',
+            mode: 'cors',
+            headers: {
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.5',
+              'Cache-Control': 'no-cache'
+            },
+            cache: 'no-cache'
+          });
+          
+          if(r.ok){
+            const txt = await r.text();
+            if(txt.length > 100 && /Votes?|Views?|vote|view/i.test(txt)) {
+              return {html: txt, usedProxy: false, success: true};
+            }
+          }
+        } catch(e) {
+          // Silently fail and try proxy
         }
+      }
+      
+      // Try proxies with retry logic
+      if(attempt < maxAttempts) {
+        const proxyIndex = attempt % PROXY_LIST.length;
+        const proxy = PROXY_LIST[proxyIndex];
+        const proxyUrl = proxy(url);
+        
+        try {
+          const r = await fetch(proxyUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            }
+          });
+          
+          if(r.ok){
+            const txt = await r.text();
+            if(txt.length > 100) {
+              return {html: txt, usedProxy: true, success: true, proxyUrl};
+            }
+          }
+        } catch(e) {
+          // Try next attempt
+        }
+        
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return fetchWithFallback(url, attempt + 1);
+      }
+      
+      throw new Error(`Failed to fetch after ${maxAttempts} attempts`);
+    }
+
+    // Simplified pre-flight request
+    async function makePreflightRequest() {
+      try {
+        clog("Making pre-flight request...");
+        await fetchWithFallback(PREFLIGHT_URL);
+        clog("Pre-flight completed");
+        return true;
+      } catch (e) {
+        clog(`Pre-flight failed: ${e.message}`);
+        return false;
       }
     }
 
@@ -275,7 +337,7 @@
               <div id="views-${sub.id}" class="small muted">— views</div>
             </div>
             <div class="submission-delta">
-              <div class="small muted">Δ per 2.5s</div>
+              <div class="small muted">Δ per 5s</div>
               <div id="delta-${sub.id}" class="small">—</div>
               <div class="small muted" style="margin-top:6px">Rate (v/s)</div>
               <div id="rate-${sub.id}" class="small">—</div>
@@ -288,29 +350,47 @@
 
     // UI update function
     function updateUI(data){
+      let activeCount = 0;
+      
       // Update individual submission cards
       SUBMISSIONS.forEach(sub => {
         const votesEl = document.getElementById(`votes-${sub.id}`);
         const viewsEl = document.getElementById(`views-${sub.id}`);
         const deltaEl = document.getElementById(`delta-${sub.id}`);
         const rateEl = document.getElementById(`rate-${sub.id}`);
+        const cardEl = document.getElementById(`card-${sub.id}`);
         
         const subData = data[sub.id];
-        if (subData) {
-          votesEl.innerText = subData.votes !== null ? subData.votes.toLocaleString() : '—';
+        if (subData && subData.votes !== null) {
+          activeCount++;
+          votesEl.innerText = subData.votes.toLocaleString();
           viewsEl.innerText = subData.views !== null ? (subData.views.toLocaleString() + ' views') : '— views';
           deltaEl.innerText = (subData.delta >= 0 ? '+' + subData.delta : subData.delta);
+          deltaEl.className = subData.delta > 0 ? 'small delta-up' : (subData.delta < 0 ? 'small delta-down' : 'small');
           rateEl.innerText = subData.rate !== null ? subData.rate.toFixed(4) : '—';
+          cardEl.style.opacity = '1';
+        } else {
+          votesEl.innerText = '—';
+          viewsEl.innerText = '— views';
+          deltaEl.innerText = '—';
+          rateEl.innerText = '—';
+          cardEl.style.opacity = '0.7';
         }
       });
+
+      // Update active count
+      activeCountEl.textContent = `${activeCount}/8`;
+      activeSubmissions = activeCount;
 
       // Update session delta
       let sessionText = "";
       SUBMISSIONS.forEach(sub => {
-        if (sessionText) sessionText += " | ";
-        sessionText += `${sub.name}: ${sessionDelta[sub.id]}`;
+        if (sessionDelta[sub.id] !== 0) {
+          if (sessionText) sessionText += " | ";
+          sessionText += `${sub.name}: ${sessionDelta[sub.id] > 0 ? '+' : ''}${sessionDelta[sub.id]}`;
+        }
       });
-      sessionDeltaEl.innerText = sessionText;
+      sessionDeltaEl.innerText = sessionText || "No changes yet";
 
       // Update leader
       const validData = SUBMISSIONS.filter(sub => 
@@ -334,7 +414,7 @@
           leadTextEl.innerHTML = `${leader.name} leading with <strong>${leaderVotes.toLocaleString()}</strong> votes`;
         }
       } else {
-        leadTextEl.innerText = '—';
+        leadTextEl.innerText = 'No data available';
       }
 
       lastUpdateEl.innerText = new Date().toLocaleTimeString();
@@ -350,13 +430,14 @@
     ];
     
     const chartDatasets = SUBMISSIONS.map((sub, index) => ({
-      label: `${sub.name} (${sub.id})`,
+      label: `${sub.name}`,
       data: historyData[sub.id],
       borderColor: colors[index % colors.length],
-      backgroundColor: 'rgba(255,255,255,0.08)',
+      backgroundColor: colors[index % colors.length] + '20',
       tension: 0.2,
       pointRadius: 2,
-      borderWidth: 2
+      borderWidth: 2,
+      hidden: false
     }));
     
     const chart = new Chart(ctx, {
@@ -366,42 +447,89 @@
         datasets: chartDatasets
       },
       options: {
-        animation:false,
-        responsive:true,
-        maintainAspectRatio:false,
+        animation: false,
+        responsive: true,
+        maintainAspectRatio: false,
         scales: {
-          x: { display:true, title:{display:false} },
-          y: { display:true, beginAtZero:false, title:{display:true, text:'Votes'} }
+          x: { 
+            display: true, 
+            title: { display: false },
+            ticks: {
+              maxTicksLimit: 8
+            }
+          },
+          y: { 
+            display: true, 
+            beginAtZero: false, 
+            title: { display: true, text: 'Votes' } 
+          }
         },
-        plugins: { legend: { display:true } }
+        plugins: { 
+          legend: { 
+            display: true,
+            labels: {
+              boxWidth: 12,
+              font: {
+                size: 11
+              }
+            }
+          } 
+        }
       }
     });
 
+    // Sequential fetching with delays to avoid blocking
+    async function fetchAllSubmissions() {
+      const results = {};
+      let successCount = 0;
+      
+      for(let i = 0; i < SUBMISSIONS.length; i++) {
+        const sub = SUBMISSIONS[i];
+        
+        try {
+          statusEl.innerText = `Fetching ${sub.name} (${i+1}/${SUBMISSIONS.length})...`;
+          const result = await fetchWithFallback(URL_TEMPLATE(sub.id));
+          const extracted = extractVotesViews(result.html);
+          
+          results[sub.id] = extracted;
+          
+          if(extracted.votes !== null) {
+            successCount++;
+            clog(`✓ ${sub.name}: ${extracted.votes} votes`);
+          } else {
+            clog(`✗ ${sub.name}: No data found`);
+          }
+        } catch(e) {
+          clog(`✗ ${sub.name}: ${e.message}`);
+          results[sub.id] = {votes: null, views: null};
+        }
+        
+        // Add delay between requests (except last one)
+        if(i < SUBMISSIONS.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 800));
+        }
+      }
+      
+      return {results, successCount};
+    }
+
     // main polling function
     async function pollOnce(){
-      statusEl.innerText = 'Making pre-flight requests...';
-      
-      // Make pre-flight requests first
-      await makePreflightRequests();
-      
-      statusEl.innerText = 'Fetching submission data...';
       const startTime = performance.now();
       
-      try{
-        // Fetch all submissions in parallel
-        const fetchPromises = SUBMISSIONS.map(sub => 
-          fetchWithFallback(URL_TEMPLATE(sub.id))
-        );
+      try {
+        // Make single pre-flight request
+        await makePreflightRequest();
         
-        const results = await Promise.all(fetchPromises);
+        // Fetch all submissions sequentially
+        const {results, successCount} = await fetchAllSubmissions();
         
         const now = Date.now();
         const data = {};
         
         // Process results
-        SUBMISSIONS.forEach((sub, index) => {
-          const result = results[index];
-          const extracted = extractVotesViews(result.html);
+        SUBMISSIONS.forEach(sub => {
+          const extracted = results[sub.id];
           
           // Compute deltas
           let delta = 0, rate = null;
@@ -434,8 +562,8 @@
           historyData[sub.id].push(data[sub.id].votes ?? null);
         });
         
-        // Keep history limited to e.g. 200 points
-        if(historyLabels.length > 200){ 
+        // Keep history limited
+        if(historyLabels.length > 50){ 
           historyLabels.shift(); 
           SUBMISSIONS.forEach(sub => {
             historyData[sub.id].shift();
@@ -456,18 +584,9 @@
         lastTime = now;
 
         const elapsedMs = Math.round(performance.now() - startTime);
-        statusEl.innerText = `OK — ${elapsedMs}ms`;
+        statusEl.innerText = `OK - ${successCount}/8 submissions - ${elapsedMs}ms`;
         
-        // Create summary log
-        let summary = "";
-        SUBMISSIONS.forEach(sub => {
-          if (summary) summary += " | ";
-          const subData = data[sub.id];
-          summary += `${sub.name}: ${subData.votes ?? '-'} (${subData.delta >= 0 ? '+' + subData.delta : subData.delta})`;
-        });
-        clog(`${summary} — ${elapsedMs}ms`);
-        
-      }catch(err){
+      } catch(err) {
         statusEl.innerText = 'Error: ' + err.message;
         clog('Error in poll: ' + err.message);
       }
@@ -477,6 +596,7 @@
     (async function startLoop(){
       // Create submission cards first
       createSubmissionCards();
+      clog("Vote Comparator started - fetching data every 5 seconds");
       
       // first poll immediately
       await pollOnce();
