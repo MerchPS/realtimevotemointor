@@ -1,343 +1,141 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vote Comparator — Yaraayay (24072) vs Wasawho (24069)</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Motionime Vote Tracker - 8 Submissions</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
 <style>
-  :root{
-    --bg:#07121b; --card:#0b1622; --muted:#98a6b8; --ycol:#6bc1ff; --wcol:#ff6b6b;
-    --glass: rgba(255,255,255,0.03);
-  }
-  *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;}
-  body{margin:0;background:linear-gradient(180deg,#051022 0%, #071735 100%);color:#e6eef8;min-height:100vh;padding:22px;}
-  .container{max-width:1100px;margin:0 auto;}
-  header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
-  h1{margin:0;font-size:20px}
-  p.lead{margin:4px 0 0;color:var(--muted);font-size:13px}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
-  .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.04);padding:12px;border-radius:10px;box-shadow:0 8px 30px rgba(2,6,23,0.6)}
-  .card h3{margin:0 0 6px;font-size:14px}
-  .big{font-size:28px;font-weight:700}
-  .small{color:var(--muted);font-size:12px}
-  .delta-up{color:#6ee7b7;font-weight:700}
-  .delta-down{color:#ff8b8b;font-weight:700}
-  .chart-wrap{background:var(--card);padding:12px;border-radius:10px;margin-bottom:12px}
-  canvas{max-width:100%}
-  .summary{display:flex;gap:12px;flex-wrap:wrap}
-  .stat{background:var(--glass);padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);min-width:160px}
-  .muted{color:var(--muted)}
-  footer{margin-top:14px;color:var(--muted);font-size:13px}
-  .log{height:120px;overflow:auto;background:rgba(0,0,0,0.2);padding:8px;border-radius:8px;font-size:12px;color:#d9e9ff}
-  @media (max-width:860px){ .grid{grid-template-columns:1fr} }
+  body{background:#0b1420;color:#eaf1ff;font-family:Inter,sans-serif;padding:20px;}
+  h1{text-align:center;margin-bottom:10px;}
+  table{width:100%;border-collapse:collapse;margin-top:10px;}
+  th,td{padding:8px 10px;border-bottom:1px solid #243041;text-align:left;}
+  th{background:#132033;}
+  tr:nth-child(even){background:#101b2d;}
+  .up{color:#33ff77;font-weight:bold;}
+  .down{color:#ff6b6b;font-weight:bold;}
+  .status{margin:10px 0;color:#8da1c0;font-size:14px;}
+  footer{text-align:center;color:#697a96;margin-top:20px;font-size:12px;}
 </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <div>
-        <h1>Vote Comparator</h1>
-        <p class="lead">Realtime compare — <strong>Yaraayay (24072)</strong> vs <strong>Wasawho (24069)</strong>. Auto-update every <strong>2.5s</strong>.</p>
-      </div>
-      <div style="text-align:right">
-        <div style="font-size:12px;color:var(--muted)">Status:</div>
-        <div id="status" class="small muted">Initializing…</div>
-      </div>
-    </header>
+  <h1>📊 MotionimeFest Vote Monitor</h1>
+  <div class="status" id="status">Initializing...</div>
 
-    <div class="grid">
-      <div class="card">
-        <h3>Yaraayay — Submission 24072</h3>
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <div>
-            <div id="y_votes" class="big">—</div>
-            <div id="y_views" class="small muted">— views</div>
-          </div>
-          <div style="text-align:right">
-            <div class="small muted">Δ per 2.5s</div>
-            <div id="y_delta" class="small">—</div>
-            <div class="small muted" style="margin-top:6px">Rate (v/s)</div>
-            <div id="y_rate" class="small">—</div>
-          </div>
-        </div>
-      </div>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Nama</th>
+        <th>Votes</th>
+        <th>Δ Votes</th>
+        <th>Views</th>
+        <th>Last Update</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
 
-      <div class="card">
-        <h3>Wasawho — Submission 24069</h3>
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <div>
-            <div id="w_votes" class="big">—</div>
-            <div id="w_views" class="small muted">— views</div>
-          </div>
-          <div style="text-align:right">
-            <div class="small muted">Δ per 2.5s</div>
-            <div id="w_delta" class="small">—</div>
-            <div class="small muted" style="margin-top:6px">Rate (v/s)</div>
-            <div id="w_rate" class="small">—</div>
-          </div>
-        </div>
-      </div>
-    </div>
+  <footer>Auto refresh setiap 2.5 detik • Reload halaman jika berhenti update</footer>
 
-    <div class="chart-wrap card">
-      <canvas id="votesChart" height="140"></canvas>
-    </div>
+<script>
+const submissions = [
+  {id:24087, name:"xxknjt"},
+  {id:24084, name:"Boo"},
+  {id:24081, name:"JustDani"},
+  {id:24078, name:"SonMV"},
+  {id:24075, name:"KekeLawar"},
+  {id:24066, name:"searchforemma"},
+  {id:24072, name:"YaraYay"},
+  {id:24069, name:"Wasawho"}
+];
 
-    <div class="card summary">
-      <div class="stat">
-        <div class="small muted">Lead</div>
-        <div id="leadText" style="font-weight:700;font-size:16px">—</div>
-      </div>
-      <div class="stat">
-        <div class="small muted">Total Δ (this session)</div>
-        <div id="sessionDelta" style="font-weight:700;font-size:16px">Y: 0 | W: 0</div>
-      </div>
-      <div class="stat">
-        <div class="small muted">Last update</div>
-        <div id="lastUpdate" style="font-weight:700;font-size:14px">—</div>
-      </div>
-      <div class="stat">
-        <div class="small muted">Notes</div>
-        <div id="notes" style="font-size:13px">Attempt direct fetch then fallback to CORS proxies if blocked.</div>
-      </div>
-    </div>
+const PARTICIPATE_URL = "https://motionimefest.id/contest/newcomer-streamer-of-the-year/participate/?cid=23816&cm=1";
+const SUBMISSIONS_URL = "https://motionimefest.id/contest/newcomer-streamer-of-the-year/submissions/?cid=23816&cm=1&sd=desc&sb=date&cpn=1";
+const SUB_BASE = "https://motionimefest.id/contest/newcomer-streamer-of-the-year/submission/";
 
-    <div style="margin-top:12px" class="card">
-      <div class="small muted">Console log</div>
-      <div id="console" class="log"></div>
-    </div>
+const PROXIES = [
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u => `https://thingproxy.freeboard.io/fetch/${u}`
+];
 
-    <footer>
-      <div class="small muted">If data doesn't update: site blocked CORS/Cloudflare. Replace `PROXY_LIST` in JS with your own server proxy for reliability.</div>
-    </footer>
-  </div>
+let lastVotes = {};
+let firstRun = true;
 
-  <!-- Chart.js CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script>
-  (function(){
-    // CONFIG
-    const INTERVAL_MS = 2500; // 2.5s
-    const SUB_Y = "24072"; // Yaraayay
-    const SUB_W = "24069"; // Wasawho
-    const URL_TEMPLATE = (id) => `https://motionimefest.id/contest/newcomer-streamer-of-the-year/submission/${id}/?cid=23816&cm=1`;
+const statusEl = document.getElementById("status");
+const tbody = document.getElementById("tableBody");
 
-    // Public CORS proxies (used as fallback if direct fetch blocked)
-    // You can remove/add as needed or replace with your own proxy domain.
-    const PROXY_LIST = [
-      url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, // AllOrigins (raw)
-      url => `https://thingproxy.freeboard.io/fetch/${url}`,                  // ThingProxy
-      url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`  // duplicate fallback; you can add others
-    ];
+function parseNum(txt){
+  if(!txt)return 0;
+  const n = txt.replace(/[^\d]/g,'');
+  return parseInt(n)||0;
+}
 
-    // DOM
-    const statusEl = document.getElementById('status');
-    const logEl = document.getElementById('console');
-    const yVotesEl = document.getElementById('y_votes');
-    const wVotesEl = document.getElementById('w_votes');
-    const yViewsEl = document.getElementById('y_views');
-    const wViewsEl = document.getElementById('w_views');
-    const yDeltaEl = document.getElementById('y_delta');
-    const wDeltaEl = document.getElementById('w_delta');
-    const yRateEl = document.getElementById('y_rate');
-    const wRateEl = document.getElementById('w_rate');
-    const leadTextEl = document.getElementById('leadText');
-    const sessionDeltaEl = document.getElementById('sessionDelta');
-    const lastUpdateEl = document.getElementById('lastUpdate');
+async function fetchWithProxy(url){
+  try {
+    const res = await fetch(url);
+    if(res.ok)return await res.text();
+  } catch{}
+  for(const proxy of PROXIES){
+    try{
+      const res = await fetch(proxy(url));
+      if(res.ok)return await res.text();
+    }catch{}
+  }
+  throw new Error("All fetch failed: "+url);
+}
 
-    // state
-    let lastY = null, lastW = null;
-    let lastTime = null;
-    let sessionDeltaY = 0, sessionDeltaW = 0;
-    let historyLabels = [];
-    let historyY = [], historyW = [];
+async function refreshSequence(){
+  try{
+    statusEl.textContent = "Refreshing source cache...";
+    await fetchWithProxy(PARTICIPATE_URL);
+    await fetchWithProxy(SUBMISSIONS_URL);
+    statusEl.textContent = "Fetching 8 submissions...";
+    const results = [];
 
-    // helper: log (console area)
-    function clog(msg){
-      const ts = new Date().toLocaleTimeString();
-      logEl.innerText = `[${ts}] ${msg}\n` + logEl.innerText;
+    for(const s of submissions){
+      const html = await fetchWithProxy(`${SUB_BASE}${s.id}/?cid=23816&cm=1`);
+      const votesMatch = html.match(/([\d,\.]+)\s*Votes/i);
+      const viewsMatch = html.match(/([\d,\.]+)\s*Views/i);
+      const votes = votesMatch ? parseNum(votesMatch[1]) : 0;
+      const views = viewsMatch ? parseNum(viewsMatch[1]) : 0;
+
+      let delta = 0;
+      if(lastVotes[s.id]!=null) delta = votes - lastVotes[s.id];
+      lastVotes[s.id] = votes;
+
+      results.push({...s, votes, views, delta});
     }
 
-    // helper: parse numbers like "3,768" or "90.123"
-    function parseNumber(s){
-      if(!s) return null;
-      const digits = s.replace(/[^\d]/g, '');
-      return digits ? parseInt(digits,10) : null;
-    }
+    updateTable(results);
+    firstRun = false;
+    const t = new Date().toLocaleTimeString();
+    statusEl.textContent = `Last updated ${t}`;
+  }catch(e){
+    statusEl.textContent = "Error: "+e.message;
+  }
+}
 
-    // parse votes/views from fetched HTML string (simple extraction)
-    function extractVotesViews(html){
-      // get plain text
-      // remove tags
-      const tmp = document.createElement('div');
-      tmp.innerHTML = html;
-      const text = tmp.textContent || tmp.innerText || '';
-      // try find "<num> Votes" and "<num> Views"
-      const vMatch = text.match(/([\d\.,]+)\s*Votes/i);
-      const wMatch = text.match(/([\d\.,]+)\s*Views/i);
-      const votes = vMatch ? parseNumber(vMatch[1]) : null;
-      const views = wMatch ? parseNumber(wMatch[1]) : null;
-      return {votes, views};
-    }
+function updateTable(data){
+  tbody.innerHTML = "";
+  data.forEach(r=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.id}</td>
+      <td>${r.name}</td>
+      <td>${r.votes.toLocaleString()}</td>
+      <td class="${r.delta>0?"up":r.delta<0?"down":""}">
+        ${!firstRun?(r.delta>=0?`+${r.delta}`:r.delta):"-"}
+      </td>
+      <td>${r.views.toLocaleString()}</td>
+      <td>${new Date().toLocaleTimeString()}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
 
-    // attempt fetch with direct then fallback to proxies
-    async function fetchWithFallback(url){
-      // try direct
-      try{
-        const r = await fetch(url, {method:'GET', mode:'cors'});
-        if(r.ok){
-          const txt = await r.text();
-          // quick check: do we see "Votes" string?
-          if(/Votes/i.test(txt)) return {html: txt, usedProxy:false};
-          clog('Direct fetch returned but no "Votes" text found; will fallback');
-        } else {
-          clog(`Direct fetch status ${r.status}; fallback`);
-        }
-      }catch(e){
-        clog('Direct fetch failed: ' + e.message);
-      }
-      // fallback proxies in order
-      for(const p of PROXY_LIST){
-        const purl = p(url);
-        try{
-          const r2 = await fetch(purl, {method:'GET'});
-          if(r2.ok){
-            const txt2 = await r2.text();
-            if(/Votes/i.test(txt2)){
-              clog(`Fetched via proxy: ${purl}`);
-              return {html: txt2, usedProxy:true, proxyUrl:purl};
-            } else {
-              clog(`Proxy ${purl} responded but no Votes text`);
-            }
-          } else {
-            clog(`Proxy ${purl} status ${r2.status}`);
-          }
-        }catch(e){
-          clog(`Proxy ${purl} failed: ${e.message}`);
-        }
-      }
-      throw new Error('All fetch attempts failed or content not found');
-    }
-
-    // UI update function
-    function updateUI(yVotes, yViews, wVotes, wViews, deltaY, deltaW, rateY, rateW){
-      yVotesEl.innerText = yVotes !== null ? yVotes.toLocaleString() : '—';
-      wVotesEl.innerText = wVotes !== null ? wVotes.toLocaleString() : '—';
-      yViewsEl.innerText = yViews !== null ? (yViews.toLocaleString() + ' views') : '— views';
-      wViewsEl.innerText = wViews !== null ? (wViews.toLocaleString() + ' views') : '— views';
-      yDeltaEl.innerText = (deltaY>=0? '+'+deltaY : deltaY);
-      wDeltaEl.innerText = (deltaW>=0? '+'+deltaW : deltaW);
-      yRateEl.innerText = rateY !== null ? rateY.toFixed(4) : '—';
-      wRateEl.innerText = rateW !== null ? rateW.toFixed(4) : '—';
-
-      // session delta
-      sessionDeltaEl.innerText = `Y: ${sessionDeltaY} | W: ${sessionDeltaW}`;
-
-      // lead
-      if(yVotes !== null && wVotes !== null){
-        const lead = yVotes - wVotes;
-        if(lead > 0){
-          leadTextEl.innerHTML = `Yaraayay leading by <strong>${lead.toLocaleString()}</strong> votes`;
-        } else if(lead < 0){
-          leadTextEl.innerHTML = `Wasawho leading by <strong>${Math.abs(lead).toLocaleString()}</strong> votes`;
-        } else {
-          leadTextEl.innerHTML = `Tie: both have ${yVotes.toLocaleString()} votes`;
-        }
-      } else {
-        leadTextEl.innerText = '—';
-      }
-
-      lastUpdateEl.innerText = new Date().toLocaleTimeString();
-    }
-
-    // Chart.js setup
-    const ctx = document.getElementById('votesChart').getContext('2d');
-    const chart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: historyLabels,
-        datasets: [
-          { label: 'Yaraayay (24072)', data: historyY, borderColor: '#6bc1ff', backgroundColor: 'rgba(107,193,255,0.08)', tension:0.2, pointRadius:2, borderWidth:2 },
-          { label: 'Wasawho (24069)', data: historyW, borderColor: '#ff6b6b', backgroundColor: 'rgba(255,107,107,0.08)', tension:0.2, pointRadius:2, borderWidth:2 }
-        ]
-      },
-      options: {
-        animation:false,
-        responsive:true,
-        maintainAspectRatio:false,
-        scales: {
-          x: { display:true, title:{display:false} },
-          y: { display:true, beginAtZero:false, title:{display:true, text:'Votes'} }
-        },
-        plugins: { legend: { display:true } }
-      }
-    });
-
-    // main polling function
-    async function pollOnce(){
-      statusEl.innerText = 'Fetching...';
-      const startTime = performance.now();
-      try{
-        // fetch both in parallel with fallback
-        const urlY = URL_TEMPLATE(SUB_Y);
-        const urlW = URL_TEMPLATE(SUB_W);
-
-        const [resY, resW] = await Promise.all([ fetchWithFallback(urlY), fetchWithFallback(urlW) ]);
-
-        const dataY = extractVotesViews(resY.html);
-        const dataW = extractVotesViews(resW.html);
-
-        const now = Date.now();
-        // compute deltas
-        let deltaY = 0, deltaW = 0, rateY = null, rateW = null;
-        if(lastTime !== null){
-          const elapsedSec = (now - lastTime)/1000;
-          if(dataY.votes !== null && lastY !== null){ deltaY = dataY.votes - lastY; rateY = deltaY/elapsedSec; }
-          if(dataW.votes !== null && lastW !== null){ deltaW = dataW.votes - lastW; rateW = deltaW/elapsedSec; }
-        } else {
-          deltaY = 0; deltaW = 0; rateY = 0; rateW = 0;
-        }
-
-        // update session totals
-        if(deltaY) sessionDeltaY += deltaY;
-        if(deltaW) sessionDeltaW += deltaW;
-
-        // push history
-        const label = new Date().toLocaleTimeString();
-        historyLabels.push(label); historyY.push(dataY.votes ?? null); historyW.push(dataW.votes ?? null);
-        // keep history limited to e.g. 200 points
-        if(historyLabels.length > 200){ historyLabels.shift(); historyY.shift(); historyW.shift(); }
-
-        // update chart
-        chart.data.labels = historyLabels.slice();
-        chart.data.datasets[0].data = historyY.slice();
-        chart.data.datasets[1].data = historyW.slice();
-        chart.update('none');
-
-        // update UI elements
-        updateUI(dataY.votes, dataY.views, dataW.votes, dataW.views, deltaY, deltaW, rateY, rateW);
-
-        // update last
-        lastY = dataY.votes; lastW = dataW.votes; lastTime = now;
-
-        const elapsedMs = Math.round(performance.now() - startTime);
-        statusEl.innerText = `OK (fetched ${resY.usedProxy? 'via proxy':'direct'}, ${resW.usedProxy? 'via proxy':'direct'}) — ${elapsedMs}ms`;
-        clog(`Y: ${dataY.votes ?? '-'} (${deltaY>=0? '+'+deltaY:deltaY}) | W: ${dataW.votes ?? '-'} (${deltaW>=0? '+'+deltaW:deltaW}) — ${elapsedMs}ms`);
-      }catch(err){
-        statusEl.innerText = 'Error: ' + err.message;
-        clog('Error in poll: ' + err.message);
-      }
-    }
-
-    // start interval
-    (async function startLoop(){
-      // first poll immediately
-      await pollOnce();
-      setInterval(pollOnce, INTERVAL_MS);
-    })();
-
-  })();
-  </script>
+refreshSequence();
+setInterval(refreshSequence, 2500);
+</script>
 </body>
 </html>
