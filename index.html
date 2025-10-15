@@ -48,6 +48,9 @@
     opacity: 0.6;
     border-color: rgba(255,255,255,0.1);
   }
+  .submission-card.error {
+    border-color: #ff6b6b;
+  }
   .submission-card h3 {
     margin: 0 0 6px;
     font-size: 14px;
@@ -84,6 +87,29 @@
     transition: width 0.3s ease;
   }
   
+  /* Control buttons */
+  .controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .btn {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #e6eef8;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .btn:hover {
+    background: rgba(255,255,255,0.1);
+  }
+  .btn:active {
+    transform: scale(0.98);
+  }
+  
   @media (max-width: 860px) { 
     .submissions-grid { grid-template-columns: repeat(2, 1fr); }
   }
@@ -97,13 +123,20 @@
     <header>
       <div>
         <h1>Vote Comparator — All Submissions</h1>
-        <p class="lead">Realtime tracking for all 8 submissions. Auto-update every <strong>2.5s</strong>.</p>
+        <p class="lead">Realtime tracking for all 8 submissions. Auto-update every <strong>3s</strong>.</p>
       </div>
       <div style="text-align:right">
         <div style="font-size:12px;color:var(--muted)">Status:</div>
         <div id="status" class="small muted">Initializing…</div>
       </div>
     </header>
+
+    <!-- Controls -->
+    <div class="controls">
+      <button id="refreshBtn" class="btn">🔄 Refresh Now</button>
+      <button id="testProxyBtn" class="btn">🧪 Test Proxies</button>
+      <button id="toggleAutoBtn" class="btn">⏸️ Pause Auto</button>
+    </div>
 
     <!-- Progress Bar -->
     <div class="progress-container">
@@ -133,8 +166,8 @@
         <div id="lastUpdate" style="font-weight:700;font-size:14px">—</div>
       </div>
       <div class="stat">
-        <div class="small muted">Fetch Speed</div>
-        <div id="fetchSpeed" style="font-weight:700;font-size:14px">—</div>
+        <div class="small muted">Working Proxies</div>
+        <div id="proxyStatus" style="font-weight:700;font-size:14px">0/0</div>
       </div>
     </div>
 
@@ -144,7 +177,7 @@
     </div>
 
     <footer>
-      <div class="small muted">Using parallel fetching with 4 concurrent requests for maximum speed.</div>
+      <div class="small muted">Using multiple fallback strategies. If all proxies fail, try refreshing or wait for auto-recovery.</div>
     </footer>
   </div>
 
@@ -152,9 +185,9 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
   (function(){
-    // CONFIG - Back to faster interval
-    const INTERVAL_MS = 2500; // 2.5s
-    const CONCURRENT_REQUESTS = 4; // Number of parallel requests
+    // CONFIG
+    const INTERVAL_MS = 3000; // 3s
+    const CONCURRENT_REQUESTS = 3; // Reduced concurrency to avoid blocking
     
     // All 8 submissions
     const SUBMISSIONS = [
@@ -168,17 +201,23 @@
       { id: "24066", name: "searchforemma" }
     ];
     
-    // Single pre-flight URL
-    const PREFLIGHT_URL = "https://motionimefest.id/contest/newcomer-streamer-of-the-year/submissions/?cid=23816&cm=1&sd=desc&sb=date&cpn=1";
-    
     const URL_TEMPLATE = (id) => `https://motionimefest.id/contest/newcomer-streamer-of-the-year/submission/${id}/?cid=23816&cm=1`;
 
-    // Enhanced CORS proxies list
+    // Enhanced CORS proxies list with more options
     const PROXY_LIST = [
-      url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-      url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-      url => `https://thingproxy.freeboard.io/fetch/${url}`,
-      url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+      // Primary proxies (most reliable)
+      { name: 'AllOrigins', url: url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` },
+      { name: 'CorsProxy', url: url => `https://corsproxy.io/?${encodeURIComponent(url)}` },
+      { name: 'CodeTabs', url: url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}` },
+      
+      // Secondary proxies
+      { name: 'ProxyKing', url: url => `https://proxy.kingthetoto.workers.dev/?${encodeURIComponent(url)}` },
+      { name: 'CorsAnywhere', url: url => `https://cors-anywhere.herokuapp.com/${url}` },
+      { name: 'ThingsProxy', url: url => `https://thingproxy.freeboard.io/fetch/${url}` },
+      
+      // Backup proxies
+      { name: 'CorsContainer', url: url => `https://api.cors.workers.dev/?${encodeURIComponent(url)}` },
+      { name: 'AllOrigins2', url: url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}` }
     ];
 
     // DOM
@@ -188,8 +227,11 @@
     const leadTextEl = document.getElementById('leadText');
     const sessionDeltaEl = document.getElementById('sessionDelta');
     const lastUpdateEl = document.getElementById('lastUpdate');
-    const fetchSpeedEl = document.getElementById('fetchSpeed');
+    const proxyStatusEl = document.getElementById('proxyStatus');
     const progressBarEl = document.getElementById('progressBar');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const testProxyBtn = document.getElementById('testProxyBtn');
+    const toggleAutoBtn = document.getElementById('toggleAutoBtn');
 
     // state
     let lastVotes = {};
@@ -197,8 +239,10 @@
     let sessionDelta = {};
     let historyLabels = [];
     let historyData = {};
-    let activeSubmissions = 0;
-    let fetchTimes = [];
+    let workingProxies = [];
+    let isAutoUpdate = true;
+    let updateInterval;
+    let proxyTestResults = {};
 
     // Initialize state
     SUBMISSIONS.forEach(sub => {
@@ -225,27 +269,32 @@
       return digits ? parseInt(digits,10) : null;
     }
 
-    // Improved parsing function
+    // Improved parsing function with multiple strategies
     function extractVotesViews(html){
       try {
+        if (!html || html.length < 100) {
+          return {votes: null, views: null};
+        }
+
         const tmp = document.createElement('div');
         tmp.innerHTML = html;
         const text = tmp.textContent || tmp.innerText || '';
         
-        // Multiple patterns to find votes
+        // Strategy 1: Direct text patterns
         const votePatterns = [
           /([\d,]+)\s*Votes?/i,
           /Votes?\s*([\d,]+)/i,
           /"votes?"\s*:\s*"([\d,]+)"/i,
-          /vote_count["']?\s*:\s*["']?([\d,]+)/i
+          /vote_count["']?\s*:\s*["']?([\d,]+)/i,
+          /class=".*votes?.*">\s*([\d,]+)/i
         ];
         
-        // Multiple patterns to find views
         const viewPatterns = [
           /([\d,]+)\s*Views?/i,
           /Views?\s*([\d,]+)/i,
           /"views?"\s*:\s*"([\d,]+)"/i,
-          /view_count["']?\s*:\s*["']?([\d,]+)/i
+          /view_count["']?\s*:\s*["']?([\d,]+)/i,
+          /class=".*views?.*">\s*([\d,]+)/i
         ];
         
         let votes = null, views = null;
@@ -268,6 +317,19 @@
           }
         }
         
+        // Strategy 2: Look for common HTML structures
+        if (votes === null) {
+          const voteElements = tmp.querySelectorAll('[class*="vote"], [id*="vote"]');
+          for(const el of voteElements) {
+            const elText = el.textContent || '';
+            const numMatch = elText.match(/([\d,]+)/);
+            if(numMatch && elText.toLowerCase().includes('vote')) {
+              votes = parseNumber(numMatch[1]);
+              if(votes !== null) break;
+            }
+          }
+        }
+        
         return {votes, views};
       } catch(e) {
         clog(`Error parsing HTML: ${e.message}`);
@@ -275,72 +337,156 @@
       }
     }
 
-    // Enhanced fetch with better error handling and timeout
-    async function fetchWithFallback(url, attempt = 0){
-      const maxAttempts = 2;
-      const timeoutMs = 8000; // 8 second timeout
+    // Test if a proxy is working
+    async function testProxy(proxy, testUrl) {
+      try {
+        const proxyUrl = proxy.url(testUrl);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(proxyUrl, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          }
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if(response.ok) {
+          const text = await response.text();
+          if(text && text.length > 100) {
+            return { working: true, response: text.substring(0, 200) + '...' };
+          }
+        }
+        return { working: false, error: `Status: ${response.status}` };
+      } catch(error) {
+        return { working: false, error: error.message };
+      }
+    }
+
+    // Test all proxies
+    async function testAllProxies() {
+      clog("🧪 Testing all proxies...");
+      const testUrl = URL_TEMPLATE("24072"); // Test with one submission
+      workingProxies = [];
       
-      // Create timeout promise
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout')), timeoutMs)
-      );
+      for(const proxy of PROXY_LIST) {
+        statusEl.innerText = `Testing ${proxy.name}...`;
+        const result = await testProxy(proxy, testUrl);
+        proxyTestResults[proxy.name] = result;
+        
+        if(result.working) {
+          workingProxies.push(proxy);
+          clog(`✅ ${proxy.name}: WORKING`);
+        } else {
+          clog(`❌ ${proxy.name}: ${result.error}`);
+        }
+        
+        // Small delay between tests
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
       
-      // Try direct first
+      proxyStatusEl.textContent = `${workingProxies.length}/${PROXY_LIST.length}`;
+      clog(`Proxy test completed: ${workingProxies.length} working`);
+      statusEl.innerText = `Ready - ${workingProxies.length} proxies working`;
+      
+      return workingProxies.length > 0;
+    }
+
+    // Enhanced fetch with multiple fallback strategies
+    async function fetchWithFallback(url, attempt = 0) {
+      const maxAttempts = 3;
+      
+      // Strategy 1: Try direct fetch (no-cors mode)
       if(attempt === 0) {
         try {
-          const fetchPromise = fetch(url, {
+          const response = await fetch(url, {
             method: 'GET',
-            mode: 'cors',
-            headers: {
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-              'Cache-Control': 'no-cache'
-            },
+            mode: 'no-cors', // Try no-cors first
             cache: 'no-cache'
           });
-          
-          const r = await Promise.race([fetchPromise, timeoutPromise]);
-          
-          if(r.ok){
-            const txt = await r.text();
-            if(txt.length > 100 && /Votes?|Views?|vote|view/i.test(txt)) {
-              return {html: txt, usedProxy: false, success: true};
-            }
-          }
+          // With no-cors we can't read response, but it might trigger the page load
+          clog("Direct no-cors request sent");
+          // Continue to proxy strategy
         } catch(e) {
-          // Silently fail and try proxy
+          // Expected to fail in no-cors, continue to proxies
         }
       }
       
-      // Try proxies with retry logic
-      if(attempt < maxAttempts) {
-        const proxyIndex = attempt % PROXY_LIST.length;
-        const proxy = PROXY_LIST[proxyIndex];
-        const proxyUrl = proxy(url);
+      // Strategy 2: Try working proxies
+      if(workingProxies.length > 0) {
+        const proxyIndex = attempt % workingProxies.length;
+        const proxy = workingProxies[proxyIndex];
         
         try {
-          const fetchPromise = fetch(proxyUrl, {
+          const proxyUrl = proxy.url(url);
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+          
+          const response = await fetch(proxyUrl, {
             method: 'GET',
+            signal: controller.signal,
             headers: {
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             }
           });
           
-          const r = await Promise.race([fetchPromise, timeoutPromise]);
+          clearTimeout(timeoutId);
           
-          if(r.ok){
-            const txt = await r.text();
-            if(txt.length > 100) {
-              return {html: txt, usedProxy: true, success: true, proxyUrl};
+          if(response.ok) {
+            const text = await response.text();
+            if(text && text.length > 100) {
+              return {
+                html: text,
+                usedProxy: true,
+                proxyName: proxy.name,
+                success: true
+              };
             }
           }
-        } catch(e) {
-          // Try next attempt
+        } catch(error) {
+          clog(`Proxy ${proxy.name} failed: ${error.message}`);
+        }
+      }
+      
+      // Strategy 3: Try all proxies as fallback
+      if(attempt < maxAttempts) {
+        for(const proxy of PROXY_LIST) {
+          if(workingProxies.includes(proxy)) continue; // Skip already tried
+          
+          try {
+            const proxyUrl = proxy.url(url);
+            const response = await fetch(proxyUrl, {
+              method: 'GET',
+              headers: {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              }
+            });
+            
+            if(response.ok) {
+              const text = await response.text();
+              if(text && text.length > 100) {
+                workingProxies.push(proxy); // Add to working list
+                return {
+                  html: text,
+                  usedProxy: true,
+                  proxyName: proxy.name,
+                  success: true
+                };
+              }
+            }
+          } catch(error) {
+            // Continue to next proxy
+          }
         }
         
+        // Retry with next attempt
         return fetchWithFallback(url, attempt + 1);
       }
       
-      throw new Error(`Failed to fetch after ${maxAttempts} attempts`);
+      throw new Error(`All fetch strategies failed after ${maxAttempts} attempts`);
     }
 
     // Parallel fetching with concurrency control
@@ -358,7 +504,10 @@
           try {
             // Set loading state
             const cardEl = document.getElementById(`card-${sub.id}`);
-            if(cardEl) cardEl.classList.add('loading');
+            if(cardEl) {
+              cardEl.classList.add('loading');
+              cardEl.classList.remove('error');
+            }
             
             const result = await fetchWithFallback(URL_TEMPLATE(sub.id));
             const extracted = extractVotesViews(result.html);
@@ -366,20 +515,28 @@
             results[sub.id] = extracted;
             
             // Remove loading state
-            if(cardEl) cardEl.classList.remove('loading');
+            if(cardEl) {
+              cardEl.classList.remove('loading');
+              if(extracted.votes === null) {
+                cardEl.classList.add('error');
+              }
+            }
             
             if(extracted.votes !== null) {
-              clog(`✓ ${sub.name}: ${extracted.votes} votes`);
+              clog(`✅ ${sub.name}: ${extracted.votes} votes (via ${result.proxyName || 'direct'})`);
             } else {
-              clog(`✗ ${sub.name}: No data found`);
+              clog(`❌ ${sub.name}: No data found in response`);
             }
           } catch(e) {
-            clog(`✗ ${sub.name}: ${e.message}`);
+            clog(`❌ ${sub.name}: ${e.message}`);
             results[sub.id] = {votes: null, views: null};
             
-            // Remove loading state on error too
+            // Set error state
             const cardEl = document.getElementById(`card-${sub.id}`);
-            if(cardEl) cardEl.classList.remove('loading');
+            if(cardEl) {
+              cardEl.classList.remove('loading');
+              cardEl.classList.add('error');
+            }
           }
           
           // Update progress
@@ -388,7 +545,7 @@
           progressBarEl.style.width = `${progress}%`;
           
           // Update status
-          statusEl.innerText = `Fetching... ${completed}/${total}`;
+          statusEl.innerText = `Fetching... ${completed}/${total} (${workingProxies.length} proxies)`;
         });
         
         return Promise.allSettled(batchPromises);
@@ -403,6 +560,8 @@
       // Process batches sequentially but each batch in parallel
       for(const batch of batches) {
         await processBatch(batch);
+        // Small delay between batches to avoid overwhelming
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
       
       return {results, successCount: Object.values(results).filter(r => r.votes !== null).length};
@@ -423,7 +582,7 @@
               <div id="views-${sub.id}" class="small muted">— views</div>
             </div>
             <div class="submission-delta">
-              <div class="small muted">Δ per 2.5s</div>
+              <div class="small muted">Δ per 3s</div>
               <div id="delta-${sub.id}" class="small">—</div>
               <div class="small muted" style="margin-top:6px">Rate (v/s)</div>
               <div id="rate-${sub.id}" class="small">—</div>
@@ -455,6 +614,7 @@
           deltaEl.className = subData.delta > 0 ? 'small delta-up' : (subData.delta < 0 ? 'small delta-down' : 'small');
           rateEl.innerText = subData.rate !== null ? subData.rate.toFixed(4) : '—';
           cardEl.style.opacity = '1';
+          cardEl.classList.remove('error');
         } else {
           votesEl.innerText = '—';
           viewsEl.innerText = '— views';
@@ -463,9 +623,6 @@
           cardEl.style.opacity = '0.7';
         }
       });
-
-      // Update active count
-      activeSubmissions = activeCount;
 
       // Update session delta
       let sessionText = "";
@@ -503,6 +660,7 @@
       }
 
       lastUpdateEl.innerText = new Date().toLocaleTimeString();
+      proxyStatusEl.textContent = `${workingProxies.length}/${PROXY_LIST.length}`;
     }
 
     // Chart.js setup
@@ -568,8 +726,14 @@
       const startTime = performance.now();
       
       try {
-        // Fetch all submissions in parallel with concurrency control
-        const {results, successCount} = await fetchAllSubmissionsParallel();
+        // Re-test proxies if none are working
+        if(workingProxies.length === 0) {
+          clog("No working proxies, testing all proxies...");
+          await testAllProxies();
+        }
+        
+        // Fetch all submissions in parallel
+        const {results, successCount} = await fetchAllSubscriptionsParallel();
         
         const now = Date.now();
         const data = {};
@@ -631,33 +795,61 @@
         lastTime = now;
 
         const elapsedMs = Math.round(performance.now() - startTime);
-        
-        // Track fetch times for average calculation
-        fetchTimes.push(elapsedMs);
-        if(fetchTimes.length > 5) fetchTimes.shift();
-        const avgFetchTime = fetchTimes.reduce((a, b) => a + b, 0) / fetchTimes.length;
-        
         statusEl.innerText = `OK - ${successCount}/8 submissions - ${elapsedMs}ms`;
-        fetchSpeedEl.textContent = `${elapsedMs}ms (avg: ${Math.round(avgFetchTime)}ms)`;
         
-        clog(`Completed in ${elapsedMs}ms - ${successCount}/8 successful`);
+        clog(`✅ Completed in ${elapsedMs}ms - ${successCount}/8 successful`);
         
       } catch(err) {
         statusEl.innerText = 'Error: ' + err.message;
-        clog('Error in poll: ' + err.message);
+        clog('❌ Error in poll: ' + err.message);
+        
+        // If major error, re-test proxies
+        workingProxies = [];
       }
     }
 
-    // start interval
-    (async function startLoop(){
-      // Create submission cards first
+    // Event listeners
+    refreshBtn.addEventListener('click', () => {
+      clog("Manual refresh triggered");
+      pollOnce();
+    });
+
+    testProxyBtn.addEventListener('click', async () => {
+      await testAllProxies();
+    });
+
+    toggleAutoBtn.addEventListener('click', () => {
+      isAutoUpdate = !isAutoUpdate;
+      if(isAutoUpdate) {
+        clearInterval(updateInterval);
+        updateInterval = setInterval(pollOnce, INTERVAL_MS);
+        toggleAutoBtn.textContent = '⏸️ Pause Auto';
+        clog("Auto-update resumed");
+      } else {
+        clearInterval(updateInterval);
+        toggleAutoBtn.textContent = '▶️ Resume Auto';
+        clog("Auto-update paused");
+      }
+    });
+
+    // Initialize application
+    async function initializeApp() {
       createSubmissionCards();
-      clog("Vote Comparator started - parallel fetching with 4 concurrent requests");
+      clog("🚀 Vote Comparator starting...");
       
-      // first poll immediately
+      // Test proxies first
+      await testAllProxies();
+      
+      // First poll
       await pollOnce();
-      setInterval(pollOnce, INTERVAL_MS);
-    })();
+      
+      // Start auto-update
+      updateInterval = setInterval(pollOnce, INTERVAL_MS);
+      clog(`Auto-update started (${INTERVAL_MS}ms interval)`);
+    }
+
+    // Start the application
+    initializeApp();
 
   })();
   </script>
