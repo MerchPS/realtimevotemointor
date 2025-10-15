@@ -1,489 +1,509 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vote Comparator — Real Data</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --bg:#07121b; --card:#0b1622; --muted:#98a6b8; --ycol:#6bc1ff; --wcol:#ff6b6b;
-    --glass: rgba(255,255,255,0.03);
-  }
-  *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;}
-  body{margin:0;background:linear-gradient(180deg,#051022 0%, #071735 100%);color:#e6eef8;min-height:100vh;padding:22px;}
-  .container{max-width:1100px;margin:0 auto;}
-  header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
-  h1{margin:0;font-size:20px}
-  p.lead{margin:4px 0 0;color:var(--muted);font-size:13px}
-  .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.04);padding:12px;border-radius:10px;box-shadow:0 8px 30px rgba(2,6,23,0.6)}
-  .big{font-size:28px;font-weight:700}
-  .small{color:var(--muted);font-size:12px}
-  .delta-up{color:#6ee7b7;font-weight:700}
-  .delta-down{color:#ff8b8b;font-weight:700}
-  .chart-wrap{background:var(--card);padding:12px;border-radius:10px;margin-bottom:12px}
-  canvas{max-width:100%}
-  .summary{display:flex;gap:12px;flex-wrap:wrap}
-  .stat{background:var(--glass);padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);min-width:160px}
-  .muted{color:var(--muted)}
-  footer{margin-top:14px;color:var(--muted);font-size:13px}
-  .log{height:120px;overflow:auto;background:rgba(0,0,0,0.2);padding:8px;border-radius:8px;font-size:12px;color:#d9e9ff}
-  
-  .submissions-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin-bottom: 12px;
-  }
-  .submission-card {
-    background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-    border: 1px solid rgba(255,255,255,0.04);
-    padding: 12px;
-    border-radius: 10px;
-    box-shadow: 0 8px 30px rgba(2,6,23,0.6);
-  }
-  .submission-card h3 {
-    margin: 0 0 6px;
-    font-size: 14px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .submission-stats {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .submission-votes {
-    font-size: 20px;
-    font-weight: 700;
-  }
-  .submission-delta {
-    text-align: right;
-  }
-  
-  .controls {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 12px;
-  }
-  .btn {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    color: #e6eef8;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    cursor: pointer;
-  }
-  
-  @media (max-width: 860px) { 
-    .submissions-grid { grid-template-columns: repeat(2, 1fr); }
-  }
-  @media (max-width: 480px) { 
-    .submissions-grid { grid-template-columns: 1fr; }
-  }
-</style>
-</head>
-<body>
-  <div class="container">
-    <header>
-      <div>
-        <h1>Vote Comparator — Real Data</h1>
-        <p class="lead">Realtime tracking with ACTUAL data from motionimefest.id</p>
-      </div>
-      <div style="text-align:right">
-        <div style="font-size:12px;color:var(--muted)">Status:</div>
-        <div id="status" class="small muted">Initializing…</div>
-      </div>
-    </header>
+// ==UserScript==
+// @name         MotionIme Fest Live Vote Tracker
+// @namespace    http://tampermonkey.net/
+// @version      2.0
+// @description  Real-time vote tracking langsung di website
+// @author       You
+// @match        https://motionimefest.id/*
+// @grant        GM_xmlhttpRequest
+// @connect      motionimefest.id
+// ==/UserScript==
 
-    <div class="controls">
-      <button id="refreshBtn" class="btn">🔄 Refresh Now</button>
-      <button id="copyScriptBtn" class="btn">📋 Copy Console Script</button>
-    </div>
-
-    <div class="submissions-grid" id="submissionsGrid">
-      <!-- Will be populated by JavaScript -->
-    </div>
-
-    <div class="chart-wrap card">
-      <canvas id="votesChart" height="140"></canvas>
-    </div>
-
-    <div class="card summary">
-      <div class="stat">
-        <div class="small muted">Current Leader</div>
-        <div id="leadText" style="font-weight:700;font-size:16px">—</div>
-      </div>
-      <div class="stat">
-        <div class="small muted">Total Δ (this session)</div>
-        <div id="sessionDelta" style="font-weight:700;font-size:16px">Loading...</div>
-      </div>
-      <div class="stat">
-        <div class="small muted">Last update</div>
-        <div id="lastUpdate" style="font-weight:700;font-size:14px">—</div>
-      </div>
-      <div class="stat">
-        <div class="small muted">Data Source</div>
-        <div id="dataSource" style="font-weight:700;font-size:14px">Console Script</div>
-      </div>
-    </div>
-
-    <div style="margin-top:12px" class="card">
-      <div class="small muted">Instructions & Console Log</div>
-      <div id="console" class="log">
-📋 <strong>HOW TO USE:</strong>
-1. Open motionimefest.id in your browser
-2. Press F12 to open Developer Tools
-3. Go to Console tab
-4. Paste and run the script from "Copy Console Script" button
-5. Come back here and click "Refresh Now"
-
-🔧 <strong>Alternative:</strong>
-- Install Tampermonkey browser extension
-- Create a user script that injects this page into motionimefest.id
-      </div>
-    </div>
-
-    <footer>
-      <div class="small muted">Uses real data from motionimefest.id. Run the console script on the actual website.</div>
-    </footer>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script>
-  (function(){
-    const INTERVAL_MS = 5000;
+(function() {
+    'use strict';
     
+    // Config
     const SUBMISSIONS = [
-      { id: "24087", name: "xxknjt" },
-      { id: "24084", name: "boo" },
-      { id: "24081", name: "JustDani" },
-      { id: "24078", name: "SonMV" },
-      { id: "24075", name: "KekeLawar" },
-      { id: "24066", name: "searchforemma" },
-      { id: "24072", name: "YaraYay" },
-      { id: "24069", name: "Wasawho" }
+        { id: "24087", name: "xxknjt" },
+        { id: "24084", name: "boo" },
+        { id: "24081", name: "JustDani" },
+        { id: "24078", name: "SonMV" },
+        { id: "24075", name: "KekeLawar" },
+        { id: "24066", name: "searchforemma" },
+        { id: "24072", name: "YaraYay" },
+        { id: "24069", name: "Wasawho" }
     ];
-
-    // DOM elements
-    const statusEl = document.getElementById('status');
-    const logEl = document.getElementById('console');
-    const submissionsGridEl = document.getElementById('submissionsGrid');
-    const leadTextEl = document.getElementById('leadText');
-    const sessionDeltaEl = document.getElementById('sessionDelta');
-    const lastUpdateEl = document.getElementById('lastUpdate');
-    const refreshBtn = document.getElementById('refreshBtn');
-    const copyScriptBtn = document.getElementById('copyScriptBtn');
-
+    
+    const UPDATE_INTERVAL = 5000; // 5 detik
+    const BASE_URL = "https://motionimefest.id/contest/newcomer-streamer-of-the-year/submission";
+    
     // State
     let lastVotes = {};
-    let lastTime = null;
     let sessionDelta = {};
-    let historyLabels = [];
-    let historyData = {};
-    let currentData = {};
-
+    let isTracking = false;
+    let updateInterval;
+    
     // Initialize state
     SUBMISSIONS.forEach(sub => {
-      lastVotes[sub.id] = null;
-      sessionDelta[sub.id] = 0;
-      historyData[sub.id] = [];
-      currentData[sub.id] = { votes: null, views: null };
+        lastVotes[sub.id] = null;
+        sessionDelta[sub.id] = 0;
     });
-
-    function clog(msg) {
-      const ts = new Date().toLocaleTimeString();
-      logEl.innerHTML = `<div>[${ts}] ${msg}</div>` + logEl.innerHTML;
+    
+    // CSS Styles
+    const styles = `
+    .vote-tracker-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        width: 380px;
+        background: linear-gradient(135deg, #0b1622 0%, #07121b 100%);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+        font-family: 'Inter', system-ui, sans-serif;
+        color: #e6eef8;
+        z-index: 10000;
+        backdrop-filter: blur(10px);
     }
-
-    // Console script for manual data fetching
-    const consoleScript = `(async () => {
-  console.clear();
-  console.log("📊 Motion Ime Fest - Real-time Vote Tracker\\n");
-
-  const submissions = [
-    { id: 24087, name: "xxknjt" },
-    { id: 24084, name: "boo" },
-    { id: 24081, name: "JustDani" },
-    { id: 24078, name: "SonMV" },
-    { id: 24075, name: "KekeLawar" },
-    { id: 24066, name: "searchforemma" },
-    { id: 24072, name: "YaraYay" },
-    { id: 24069, name: "Wasawho" }
-  ];
-
-  const BASE = "https://motionimefest.id/contest/newcomer-streamer-of-the-year/submission";
-
-  async function fetchVote(sub) {
-    const url = \`\${BASE}/\${sub.id}/?cid=23816&cm=1&_\${Date.now()}\`;
-    try {
-      const res = await fetch(url, { cache: "no-store" });
-      const html = await res.text();
-      const voteMatch = html.match(/([\\\\d,.]+)\\\\s*Votes/i);
-      const viewMatch = html.match(/([\\\\d,.]+)\\\\s*Views/i);
-      const votes = voteMatch ? parseInt(voteMatch[1].replace(/[,.]/g, "")) : 0;
-      const views = viewMatch ? parseInt(viewMatch[1].replace(/[,.]/g, "")) : 0;
-      return { ...sub, votes, views, success: true };
-    } catch (err) {
-      return { ...sub, error: err.message, success: false };
+    
+    .tracker-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
     }
-  }
-
-  console.log("🕒 Fetching real-time data...");
-  const results = await Promise.all(submissions.map(fetchVote));
-  
-  // Format results for the tracker
-  const output = {
-    timestamp: new Date().toLocaleTimeString(),
-    data: {}
-  };
-  
-  console.log("\\\\n📅 Last Update:", output.timestamp, "\\\\n");
-  
-  results.forEach(r => {
-    output.data[r.id] = { votes: r.votes, views: r.views };
-    if (r.error) {
-      console.log(\`❌ \${r.name}: \${r.error}\`);
-    } else {
-      console.log(\`📊 \${r.name.padEnd(12)} | Votes: \${r.votes.toLocaleString()} | Views: \${r.views.toLocaleString()}\`);
+    
+    .tracker-title {
+        font-size: 16px;
+        font-weight: 700;
+        margin: 0;
+        color: #6bc1ff;
     }
-  });
-
-  console.log("\\\\n✅ Copy the object below and paste in the tracker:");
-  console.log(JSON.stringify(output, null, 2));
-  console.log("\\\\n💡 Paste the above object in the tracker input field or use auto-sync if available.");
-})();`;
-
-    // Create submission cards
-    function createSubmissionCards() {
-      submissionsGridEl.innerHTML = '';
-      SUBMISSIONS.forEach(sub => {
-        const card = document.createElement('div');
-        card.className = 'submission-card';
-        card.id = `card-${sub.id}`;
-        card.innerHTML = `
-          <h3>${sub.name} — ${sub.id}</h3>
-          <div class="submission-stats">
-            <div>
-              <div id="votes-${sub.id}" class="submission-votes">—</div>
-              <div id="views-${sub.id}" class="small muted">— views</div>
+    
+    .tracker-controls {
+        display: flex;
+        gap: 8px;
+    }
+    
+    .tracker-btn {
+        background: rgba(107, 193, 255, 0.1);
+        border: 1px solid rgba(107, 193, 255, 0.3);
+        color: #6bc1ff;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .tracker-btn:hover {
+        background: rgba(107, 193, 255, 0.2);
+    }
+    
+    .tracker-btn.stop {
+        background: rgba(255, 107, 107, 0.1);
+        border-color: rgba(255, 107, 107, 0.3);
+        color: #ff6b6b;
+    }
+    
+    .submissions-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    
+    .submission-card {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 8px;
+        padding: 10px;
+        transition: all 0.3s ease;
+    }
+    
+    .submission-card:hover {
+        background: rgba(255,255,255,0.05);
+        border-color: rgba(107, 193, 255, 0.2);
+    }
+    
+    .submission-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
+    }
+    
+    .submission-name {
+        font-size: 13px;
+        font-weight: 600;
+        margin: 0;
+    }
+    
+    .submission-id {
+        font-size: 11px;
+        color: #98a6b8;
+    }
+    
+    .submission-stats {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .vote-count {
+        font-size: 18px;
+        font-weight: 700;
+    }
+    
+    .view-count {
+        font-size: 11px;
+        color: #98a6b8;
+    }
+    
+    .delta-section {
+        text-align: right;
+    }
+    
+    .delta {
+        font-size: 12px;
+        font-weight: 600;
+    }
+    
+    .delta.positive {
+        color: #6ee7b7;
+    }
+    
+    .delta.negative {
+        color: #ff8b8b;
+    }
+    
+    .rate {
+        font-size: 10px;
+        color: #98a6b8;
+        margin-top: 2px;
+    }
+    
+    .tracker-summary {
+        margin-top: 12px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(255,255,255,0.1);
+        font-size: 12px;
+    }
+    
+    .leader-info {
+        font-weight: 600;
+        color: #6ee7b7;
+        margin-bottom: 4px;
+    }
+    
+    .session-delta {
+        color: #98a6b8;
+        font-size: 11px;
+    }
+    
+    .last-update {
+        color: #98a6b8;
+        font-size: 10px;
+        text-align: center;
+        margin-top: 8px;
+    }
+    
+    /* Scrollbar styling */
+    .submissions-grid::-webkit-scrollbar {
+        width: 4px;
+    }
+    
+    .submissions-grid::-webkit-scrollbar-track {
+        background: rgba(255,255,255,0.05);
+        border-radius: 2px;
+    }
+    
+    .submissions-grid::-webkit-scrollbar-thumb {
+        background: rgba(107, 193, 255, 0.3);
+        border-radius: 2px;
+    }
+    `;
+    
+    // Inject CSS
+    const styleSheet = document.createElement("style");
+    styleSheet.textContent = styles;
+    document.head.appendChild(styleSheet);
+    
+    // Create tracker UI
+    function createTracker() {
+        const container = document.createElement('div');
+        container.className = 'vote-tracker-container';
+        container.innerHTML = `
+            <div class="tracker-header">
+                <h3 class="tracker-title">🎯 Live Vote Tracker</h3>
+                <div class="tracker-controls">
+                    <button class="tracker-btn" id="startTracker">▶ Start</button>
+                    <button class="tracker-btn stop" id="stopTracker">⏹ Stop</button>
+                    <button class="tracker-btn" id="refreshTracker">🔄 Now</button>
+                </div>
             </div>
-            <div class="submission-delta">
-              <div class="small muted">Δ</div>
-              <div id="delta-${sub.id}" class="small">—</div>
-              <div class="small muted" style="margin-top:6px">Rate (v/s)</div>
-              <div id="rate-${sub.id}" class="small">—</div>
+            
+            <div class="submissions-grid" id="submissionsGrid">
+                ${SUBMISSIONS.map(sub => `
+                    <div class="submission-card" id="card-${sub.id}">
+                        <div class="submission-header">
+                            <span class="submission-name">${sub.name}</span>
+                            <span class="submission-id">${sub.id}</span>
+                        </div>
+                        <div class="submission-stats">
+                            <div>
+                                <div class="vote-count" id="votes-${sub.id}">—</div>
+                                <div class="view-count" id="views-${sub.id}">— views</div>
+                            </div>
+                            <div class="delta-section">
+                                <div class="delta" id="delta-${sub.id}">—</div>
+                                <div class="rate" id="rate-${sub.id}">— v/s</div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
             </div>
-          </div>
+            
+            <div class="tracker-summary">
+                <div class="leader-info" id="leaderText">—</div>
+                <div class="session-delta" id="sessionDelta">Session Δ: —</div>
+                <div class="last-update" id="lastUpdate">Last update: —</div>
+            </div>
         `;
-        submissionsGridEl.appendChild(card);
-      });
+        
+        document.body.appendChild(container);
+        
+        // Add event listeners
+        document.getElementById('startTracker').addEventListener('click', startTracking);
+        document.getElementById('stopTracker').addEventListener('click', stopTracking);
+        document.getElementById('refreshTracker').addEventListener('click', fetchAllData);
+        
+        // Make draggable
+        makeDraggable(container);
     }
-
-    // Update UI with new data
-    function updateUI(data) {
-      const now = Date.now();
-      
-      SUBMISSIONS.forEach(sub => {
+    
+    // Make tracker draggable
+    function makeDraggable(element) {
+        let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+        element.onmousedown = dragMouseDown;
+        
+        function dragMouseDown(e) {
+            e = e || window.event;
+            e.preventDefault();
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            document.onmouseup = closeDragElement;
+            document.onmousemove = elementDrag;
+        }
+        
+        function elementDrag(e) {
+            e = e || window.event;
+            e.preventDefault();
+            pos1 = pos3 - e.clientX;
+            pos2 = pos4 - e.clientY;
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            element.style.top = (element.offsetTop - pos2) + "px";
+            element.style.left = (element.offsetLeft - pos1) + "px";
+            element.style.right = "auto";
+        }
+        
+        function closeDragElement() {
+            document.onmouseup = null;
+            document.onmousemove = null;
+        }
+    }
+    
+    // Fetch data for a single submission
+    function fetchSubmissionData(sub) {
+        return new Promise((resolve) => {
+            const url = `${BASE_URL}/${sub.id}/?cid=23816&cm=1&_=${Date.now()}`;
+            
+            GM_xmlhttpRequest({
+                method: "GET",
+                url: url,
+                onload: function(response) {
+                    try {
+                        const html = response.responseText;
+                        const voteMatch = html.match(/([\d,.]+)\s*Votes/i);
+                        const viewMatch = html.match(/([\d,.]+)\s*Views/i);
+                        
+                        const votes = voteMatch ? parseInt(voteMatch[1].replace(/[,.]/g, "")) : null;
+                        const views = viewMatch ? parseInt(viewMatch[1].replace(/[,.]/g, "")) : null;
+                        
+                        resolve({
+                            ...sub,
+                            votes,
+                            views,
+                            success: true,
+                            timestamp: Date.now()
+                        });
+                    } catch (error) {
+                        resolve({
+                            ...sub,
+                            error: error.message,
+                            success: false
+                        });
+                    }
+                },
+                onerror: function(error) {
+                    resolve({
+                        ...sub,
+                        error: error.statusText,
+                        success: false
+                    });
+                },
+                timeout: 10000
+            });
+        });
+    }
+    
+    // Fetch data for all submissions
+    async function fetchAllData() {
+        if (!isTracking) return;
+        
+        const startTime = Date.now();
+        const results = await Promise.all(SUBMISSIONS.map(fetchSubmissionData));
+        const now = Date.now();
+        
+        let leader = null;
+        let maxVotes = -1;
+        
+        results.forEach(result => {
+            if (result.success && result.votes !== null) {
+                const sub = result;
+                
+                // Calculate delta
+                let delta = 0;
+                if (lastVotes[sub.id] !== null) {
+                    delta = sub.votes - lastVotes[sub.id];
+                }
+                
+                // Update session delta
+                if (delta > 0) {
+                    sessionDelta[sub.id] += delta;
+                }
+                
+                // Update UI
+                updateSubmissionUI(sub, delta, now);
+                
+                // Track leader
+                if (sub.votes > maxVotes) {
+                    maxVotes = sub.votes;
+                    leader = sub;
+                }
+                
+                // Store current votes
+                lastVotes[sub.id] = sub.votes;
+            } else {
+                // Show error state
+                const card = document.getElementById(`card-${result.id}`);
+                if (card) {
+                    card.style.opacity = '0.6';
+                }
+            }
+        });
+        
+        // Update leader and summary
+        if (leader) {
+            document.getElementById('leaderText').textContent = 
+                `🏆 ${leader.name}: ${leader.votes.toLocaleString()} votes`;
+        }
+        
+        // Update session delta display
+        const totalDelta = Object.values(sessionDelta).reduce((sum, delta) => sum + delta, 0);
+        document.getElementById('sessionDelta').textContent = 
+            `Session Δ: +${totalDelta} votes`;
+        
+        // Update last update time
+        document.getElementById('lastUpdate').textContent = 
+            `Last update: ${new Date().toLocaleTimeString()}`;
+        
+        console.log(`✅ Vote data updated in ${Date.now() - startTime}ms`);
+    }
+    
+    // Update UI for a single submission
+    function updateSubmissionUI(sub, delta, currentTime) {
         const votesEl = document.getElementById(`votes-${sub.id}`);
         const viewsEl = document.getElementById(`views-${sub.id}`);
         const deltaEl = document.getElementById(`delta-${sub.id}`);
         const rateEl = document.getElementById(`rate-${sub.id}`);
+        const cardEl = document.getElementById(`card-${sub.id}`);
         
-        const subData = data[sub.id];
-        if (subData && subData.votes !== null) {
-          // Update displayed values
-          votesEl.innerText = subData.votes.toLocaleString();
-          viewsEl.innerText = subData.views.toLocaleString() + ' views';
-          
-          // Calculate delta
-          let delta = 0;
-          if (lastVotes[sub.id] !== null) {
-            delta = subData.votes - lastVotes[sub.id];
-          }
-          deltaEl.innerText = delta >= 0 ? `+${delta}` : `${delta}`;
-          deltaEl.className = delta > 0 ? 'small delta-up' : (delta < 0 ? 'small delta-down' : 'small');
-          
-          // Calculate rate
-          let rate = 0;
-          if (lastTime !== null && delta > 0) {
-            const elapsedSec = (now - lastTime) / 1000;
-            rate = delta / elapsedSec;
-          }
-          rateEl.innerText = rate > 0 ? rate.toFixed(4) : '0.0000';
-          
-          // Update session delta
-          if (delta > 0) {
-            sessionDelta[sub.id] += delta;
-          }
-          
-          // Store current vote count
-          lastVotes[sub.id] = subData.votes;
-        }
-      });
-
-      // Update leader
-      const validData = SUBMISSIONS.filter(sub => 
-        data[sub.id] && data[sub.id].votes !== null
-      );
-      
-      if (validData.length > 0) {
-        const leader = validData.reduce((prev, curr) => 
-          data[prev.id].votes > data[curr.id].votes ? prev : curr
-        );
-        const leaderVotes = data[leader.id].votes;
-        leadTextEl.innerHTML = `${leader.name} leading with <strong>${leaderVotes.toLocaleString()}</strong> votes`;
-      }
-
-      // Update session delta display
-      let sessionText = "";
-      SUBMISSIONS.forEach(sub => {
-        if (sessionDelta[sub.id] > 0) {
-          if (sessionText) sessionText += " | ";
-          sessionText += `${sub.name}: +${sessionDelta[sub.id]}`;
-        }
-      });
-      sessionDeltaEl.innerText = sessionText || "No changes yet";
-
-      lastUpdateEl.innerText = new Date().toLocaleTimeString();
-      lastTime = now;
-    }
-
-    // Process data from console script output
-    function processConsoleData(output) {
-      try {
-        const data = JSON.parse(output);
-        if (data.data) {
-          // Update current data
-          Object.keys(data.data).forEach(id => {
-            if (currentData[id]) {
-              currentData[id] = data.data[id];
+        if (votesEl) votesEl.textContent = sub.votes.toLocaleString();
+        if (viewsEl) viewsEl.textContent = sub.views ? `${sub.views.toLocaleString()} views` : '— views';
+        
+        // Update delta
+        if (deltaEl) {
+            if (delta > 0) {
+                deltaEl.textContent = `+${delta}`;
+                deltaEl.className = 'delta positive';
+            } else if (delta < 0) {
+                deltaEl.textContent = `${delta}`;
+                deltaEl.className = 'delta negative';
+            } else {
+                deltaEl.textContent = '0';
+                deltaEl.className = 'delta';
             }
-          });
-          
-          // Update history for chart
-          const label = new Date().toLocaleTimeString();
-          historyLabels.push(label);
-          
-          SUBMISSIONS.forEach(sub => {
-            historyData[sub.id].push(currentData[sub.id].votes);
-          });
-          
-          // Keep history limited
-          if (historyLabels.length > 30) {
-            historyLabels.shift();
-            SUBMISSIONS.forEach(sub => {
-              historyData[sub.id].shift();
-            });
-          }
-          
-          // Update chart
-          if (window.chart) {
-            window.chart.data.labels = historyLabels;
-            SUBMISSIONS.forEach((sub, index) => {
-              window.chart.data.datasets[index].data = historyData[sub.id];
-            });
-            window.chart.update('none');
-          }
-          
-          // Update UI
-          updateUI(currentData);
-          
-          clog(`✅ Data updated from console script - ${data.timestamp}`);
-          statusEl.innerText = `OK - Real data loaded`;
         }
-      } catch (e) {
-        clog(`❌ Invalid data format: ${e.message}`);
-      }
-    }
-
-    // Initialize Chart.js
-    function initializeChart() {
-      const ctx = document.getElementById('votesChart').getContext('2d');
-      const colors = [
-        '#6bc1ff', '#ff6b6b', '#6ee7b7', '#f59e0b', '#a78bfa', 
-        '#f97316', '#10b981', '#8b5cf6'
-      ];
-      
-      const chartDatasets = SUBMISSIONS.map((sub, index) => ({
-        label: `${sub.name}`,
-        data: historyData[sub.id],
-        borderColor: colors[index % colors.length],
-        backgroundColor: colors[index % colors.length] + '20',
-        tension: 0.2,
-        pointRadius: 2,
-        borderWidth: 2
-      }));
-      
-      window.chart = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: historyLabels,
-          datasets: chartDatasets
-        },
-        options: {
-          animation: false,
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            x: { 
-              display: true,
-              ticks: { maxTicksLimit: 8 }
-            },
-            y: { 
-              display: true,
-              beginAtZero: false,
-              title: { display: true, text: 'Votes' } 
-            }
-          },
-          plugins: { 
-            legend: { 
-              display: true,
-              labels: {
-                boxWidth: 12,
-                font: { size: 11 }
-              }
-            } 
-          }
+        
+        // Calculate and update rate (votes per second)
+        if (rateEl && delta > 0) {
+            const elapsedSinceLastUpdate = (currentTime - (lastVotes[sub.id] !== null ? currentTime : currentTime)) / 1000;
+            const rate = elapsedSinceLastUpdate > 0 ? delta / elapsedSinceLastUpdate : 0;
+            rateEl.textContent = `${rate.toFixed(2)} v/s`;
         }
-      });
+        
+        // Highlight card on update
+        if (cardEl && delta > 0) {
+            cardEl.style.background = 'rgba(110, 231, 183, 0.1)';
+            cardEl.style.borderColor = 'rgba(110, 231, 183, 0.3)';
+            setTimeout(() => {
+                cardEl.style.background = '';
+                cardEl.style.borderColor = '';
+            }, 1000);
+        }
     }
-
-    // Event listeners
-    refreshBtn.addEventListener('click', () => {
-      clog("Manual refresh requested");
-      statusEl.innerText = "Run console script on motionimefest.id";
-    });
-
-    copyScriptBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(consoleScript).then(() => {
-        clog("✅ Console script copied to clipboard!");
-        clog("Now go to motionimefest.id, open Console (F12), paste and run the script");
-      });
-    });
-
-    // Data input handler for manual paste
-    window.handleDataInput = function(dataString) {
-      processConsoleData(dataString);
-    };
-
-    // Initialize app
-    function initializeApp() {
-      createSubmissionCards();
-      initializeChart();
-      clog("🚀 Real-time Vote Tracker Ready!");
-      clog("1. Click 'Copy Console Script'");
-      clog("2. Go to motionimefest.id");
-      clog("3. Open Console (F12) and paste the script");
-      clog("4. Run it and copy the output");
-      clog("5. Use handleDataInput(paste_here) in console");
+    
+    // Start auto-tracking
+    function startTracking() {
+        if (isTracking) return;
+        
+        isTracking = true;
+        document.getElementById('startTracker').style.display = 'none';
+        document.getElementById('stopTracker').style.display = 'block';
+        
+        console.log('🚀 Starting live vote tracking...');
+        
+        // Initial fetch
+        fetchAllData();
+        
+        // Set up interval
+        updateInterval = setInterval(fetchAllData, UPDATE_INTERVAL);
     }
-
-    initializeApp();
-
-  })();
-  </script>
-</body>
-</html>
+    
+    // Stop auto-tracking
+    function stopTracking() {
+        isTracking = false;
+        document.getElementById('startTracker').style.display = 'block';
+        document.getElementById('stopTracker').style.display = 'none';
+        
+        if (updateInterval) {
+            clearInterval(updateInterval);
+            updateInterval = null;
+        }
+        
+        console.log('⏹ Live vote tracking stopped');
+    }
+    
+    // Initialize tracker
+    function init() {
+        // Wait for page to load
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', createTracker);
+        } else {
+            createTracker();
+        }
+        
+        // Auto-start after 2 seconds
+        setTimeout(startTracking, 2000);
+    }
+    
+    // Start the tracker
+    init();
+    
+})();
