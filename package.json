@@ -1,0 +1,17 @@
+{
+  "name": "live-vote-tracker",
+  "version": "1.0.0",
+  "description": "Real-time vote tracker for MotionIme Fest",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "chart.js": "^4.4.0"
+  },
+  "devDependencies": {
+    "vite": "^4.5.0"
+  }
+}
