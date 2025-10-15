@@ -29,7 +29,6 @@
   footer{margin-top:14px;color:var(--muted);font-size:13px}
   .log{height:120px;overflow:auto;background:rgba(0,0,0,0.2);padding:8px;border-radius:8px;font-size:12px;color:#d9e9ff}
   
-  /* New styles for all submissions */
   .submissions-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -42,14 +41,6 @@
     padding: 12px;
     border-radius: 10px;
     box-shadow: 0 8px 30px rgba(2,6,23,0.6);
-    transition: all 0.3s ease;
-  }
-  .submission-card.loading {
-    opacity: 0.6;
-    border-color: rgba(255,255,255,0.1);
-  }
-  .submission-card.error {
-    border-color: #ff6b6b;
   }
   .submission-card h3 {
     margin: 0 0 6px;
@@ -71,23 +62,6 @@
     text-align: right;
   }
   
-  /* Progress bar */
-  .progress-container {
-    width: 100%;
-    height: 4px;
-    background: rgba(255,255,255,0.1);
-    border-radius: 2px;
-    margin-bottom: 8px;
-    overflow: hidden;
-  }
-  .progress-bar {
-    height: 100%;
-    background: linear-gradient(90deg, #6bc1ff, #6ee7b7);
-    border-radius: 2px;
-    transition: width 0.3s ease;
-  }
-  
-  /* Control buttons */
   .controls {
     display: flex;
     gap: 8px;
@@ -101,13 +75,6 @@
     border-radius: 6px;
     font-size: 12px;
     cursor: pointer;
-    transition: all 0.2s ease;
-  }
-  .btn:hover {
-    background: rgba(255,255,255,0.1);
-  }
-  .btn:active {
-    transform: scale(0.98);
   }
   
   @media (max-width: 860px) { 
@@ -131,18 +98,10 @@
       </div>
     </header>
 
-    <!-- Controls -->
     <div class="controls">
       <button id="refreshBtn" class="btn">🔄 Refresh Now</button>
-      <button id="toggleAutoBtn" class="btn">⏸️ Pause Auto</button>
     </div>
 
-    <!-- Progress Bar -->
-    <div class="progress-container">
-      <div id="progressBar" class="progress-bar" style="width: 0%"></div>
-    </div>
-
-    <!-- All Submissions Grid -->
     <div class="submissions-grid" id="submissionsGrid">
       <!-- Will be populated by JavaScript -->
     </div>
@@ -164,10 +123,6 @@
         <div class="small muted">Last update</div>
         <div id="lastUpdate" style="font-weight:700;font-size:14px">—</div>
       </div>
-      <div class="stat">
-        <div class="small muted">Success Rate</div>
-        <div id="successRate" style="font-weight:700;font-size:14px">0%</div>
-      </div>
     </div>
 
     <div style="margin-top:12px" class="card">
@@ -176,17 +131,15 @@
     </div>
 
     <footer>
-      <div class="small muted">Using direct fetch requests. Make sure you're accessing from the same domain to avoid CORS issues.</div>
+      <div class="small muted">Using mock data for demonstration. For real data, host on same domain.</div>
     </footer>
   </div>
 
-  <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
   (function(){
     // CONFIG
-    const INTERVAL_MS = 3000; // 3s
-    const CONCURRENT_REQUESTS = 4; // Parallel requests
+    const INTERVAL_MS = 3000;
     
     // All 8 submissions
     const SUBMISSIONS = [
@@ -199,8 +152,6 @@
       { id: "24069", name: "Wasawho" },
       { id: "24066", name: "searchforemma" }
     ];
-    
-    const URL_TEMPLATE = (id) => `https://motionimefest.id/contest/newcomer-streamer-of-the-year/submission/${id}/?cid=23816&cm=1`;
 
     // DOM
     const statusEl = document.getElementById('status');
@@ -209,10 +160,7 @@
     const leadTextEl = document.getElementById('leadText');
     const sessionDeltaEl = document.getElementById('sessionDelta');
     const lastUpdateEl = document.getElementById('lastUpdate');
-    const successRateEl = document.getElementById('successRate');
-    const progressBarEl = document.getElementById('progressBar');
     const refreshBtn = document.getElementById('refreshBtn');
-    const toggleAutoBtn = document.getElementById('toggleAutoBtn');
 
     // state
     let lastVotes = {};
@@ -220,10 +168,6 @@
     let sessionDelta = {};
     let historyLabels = [];
     let historyData = {};
-    let isAutoUpdate = true;
-    let updateInterval;
-    let successCount = 0;
-    let totalAttempts = 0;
 
     // Initialize state
     SUBMISSIONS.forEach(sub => {
@@ -232,264 +176,42 @@
       historyData[sub.id] = [];
     });
 
-    // helper: log (console area)
+    // Base votes for mock data
+    const baseVotes = {
+      '24087': 1250, '24084': 1100, '24081': 980, '24078': 1350,
+      '24075': 890, '24072': 1500, '24069': 1420, '24066': 760
+    };
+
+    // helper: log
     function clog(msg){
       const ts = new Date().toLocaleTimeString();
       logEl.innerText = `[${ts}] ${msg}\n` + logEl.innerText;
-      // Keep log from getting too long
-      if(logEl.innerText.split('\n').length > 50) {
-        logEl.innerText = logEl.innerText.split('\n').slice(0, 40).join('\n');
+      if(logEl.innerText.split('\n').length > 20) {
+        logEl.innerText = logEl.innerText.split('\n').slice(0, 15).join('\n');
       }
     }
 
-    // helper: parse numbers like "3,768" or "90.123"
-    function parseNumber(s){
-      if(!s) return null;
-      const clean = s.replace(/,/g, '');
-      const digits = clean.replace(/[^\d]/g, '');
-      return digits ? parseInt(digits,10) : null;
-    }
-
-    // Simple and robust parsing function
-    function extractVotesViews(html){
-      try {
-        if (!html || html.length < 100) {
-          return {votes: null, views: null};
-        }
-
-        // Create temporary element and parse
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        
-        // Strategy 1: Look for vote count in the text content
-        const text = doc.body.textContent || '';
-        
-        // Look for patterns like "1,234 Votes" or "Votes: 1,234"
-        const voteMatch = text.match(/(\d{1,3}(?:,\d{3})*)\s*Votes?/i) || 
-                         text.match(/Votes?\s*:\s*(\d{1,3}(?:,\d{3})*)/i);
-        
-        const viewMatch = text.match(/(\d{1,3}(?:,\d{3})*)\s*Views?/i) || 
-                         text.match(/Views?\s*:\s*(\d{1,3}(?:,\d{3})*)/i);
-        
-        let votes = voteMatch ? parseNumber(voteMatch[1]) : null;
-        let views = viewMatch ? parseNumber(viewMatch[1]) : null;
-        
-        // Strategy 2: If not found, try to find in specific elements
-        if (votes === null) {
-          // Look for elements that might contain vote count
-          const possibleElements = doc.querySelectorAll('
-            [class*="vote"], [class*="count"], 
-            [class*="number"], [class*="total"],
-            .vote-count, .count, .number, .total,
-            h1, h2, h3, .stat, .metric
-          ');
-          
-          for(const el of possibleElements) {
-            const elText = el.textContent.trim();
-            if (elText && /\d+/.test(elText) && elText.length < 20) {
-              // If it's a simple number, it might be the vote count
-              const num = parseNumber(elText);
-              if (num && num > 0) {
-                votes = num;
-                break;
-              }
-            }
-          }
-        }
-        
-        return {votes, views};
-      } catch(e) {
-        clog(`Error parsing HTML: ${e.message}`);
-        return {votes: null, views: null};
-      }
-    }
-
-    // Simple direct fetch without proxies
-    async function fetchDirect(url) {
-      try {
-        // Try with different fetch modes
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        
-        const response = await fetch(url, {
-          method: 'GET',
-          mode: 'no-cors', // Use no-cors to avoid CORS issues
-          signal: controller.signal,
-          cache: 'no-cache',
-          headers: {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          }
-        });
-        
-        clearTimeout(timeoutId);
-        
-        // With no-cors we can't read the response, but we can try to trigger the request
-        // For actual data reading, we need to use a different approach
-        
-        return { success: true, html: "dummy" }; // Placeholder
-        
-      } catch(error) {
-        clog(`Direct fetch failed: ${error.message}`);
-        return { success: false, error: error.message };
-      }
-    }
-
-    // Alternative approach: Use iframe to load the page
-    async function fetchViaIframe(subId) {
-      return new Promise((resolve) => {
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = URL_TEMPLATE(subId);
-        
-        iframe.onload = function() {
-          try {
-            // Try to access iframe content (may be blocked by same-origin policy)
-            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-            const html = iframeDoc.documentElement.outerHTML;
-            const extracted = extractVotesViews(html);
-            resolve({ success: true, data: extracted });
-          } catch(e) {
-            // If we can't access iframe content, use mock data for testing
-            resolve({ 
-              success: true, 
-              data: { 
-                votes: Math.floor(Math.random() * 1000) + 1000, // Mock data
-                views: Math.floor(Math.random() * 5000) + 5000 
-              } 
-            });
-          }
-          document.body.removeChild(iframe);
-        };
-        
-        iframe.onerror = function() {
-          resolve({ success: false, error: 'Iframe failed to load' });
-          document.body.removeChild(iframe);
-        };
-        
-        document.body.appendChild(iframe);
-      });
-    }
-
-    // Simple image-based request (triggers page load without reading response)
-    function triggerPageLoad(url) {
-      const img = new Image();
-      img.src = url;
-    }
-
-    // Mock data for testing when direct fetch fails
+    // Get mock data with realistic changes
     function getMockData(subId) {
-      const baseVotes = {
-        '24087': 1250, '24084': 1100, '24081': 980, '24078': 1350,
-        '24075': 890, '24072': 1500, '24069': 1420, '24066': 760
-      };
+      // Start with base votes
+      let votes = baseVotes[subId];
       
-      const randomChange = Math.floor(Math.random() * 10) - 2; // -2 to +7
+      // If we have previous data, continue from there
+      if (lastVotes[subId] !== null) {
+        votes = lastVotes[subId];
+      }
+      
+      // Random vote increase (0-3 votes per update)
+      const increase = Math.floor(Math.random() * 4);
+      votes += increase;
+      
+      // Calculate views (roughly 3-5x votes)
+      const views = votes * (3 + Math.random() * 2);
+      
       return {
-        votes: baseVotes[subId] + randomChange,
-        views: baseVotes[subId] * 4 + Math.floor(Math.random() * 100)
+        votes: votes,
+        views: Math.floor(views)
       };
-    }
-
-    // Main fetch function - tries multiple strategies
-    async function fetchSubmissionData(sub) {
-      totalAttempts++;
-      
-      try {
-        // Strategy 1: Trigger page load (always works)
-        triggerPageLoad(URL_TEMPLATE(sub.id));
-        
-        // Strategy 2: Use mock data with realistic changes
-        const mockData = getMockData(sub.id);
-        
-        // Add some randomness to simulate real changes
-        if (lastVotes[sub.id] !== null) {
-          const change = Math.random() > 0.7 ? 1 : 0; // 30% chance of +1 vote
-          mockData.votes = lastVotes[sub.id] + change;
-        }
-        
-        successCount++;
-        return { success: true, data: mockData, method: 'mock' };
-        
-      } catch(error) {
-        clog(`All fetch methods failed for ${sub.name}: ${error.message}`);
-        return { success: false, data: { votes: null, views: null } };
-      }
-    }
-
-    // Parallel fetching with concurrency control
-    async function fetchAllSubmissions() {
-      const results = {};
-      let completed = 0;
-      const total = SUBMISSIONS.length;
-      
-      // Update progress bar
-      progressBarEl.style.width = '0%';
-      
-      // Function to process a batch of submissions
-      const processBatch = async (batch) => {
-        const batchPromises = batch.map(async (sub) => {
-          try {
-            // Set loading state
-            const cardEl = document.getElementById(`card-${sub.id}`);
-            if(cardEl) {
-              cardEl.classList.add('loading');
-              cardEl.classList.remove('error');
-            }
-            
-            const result = await fetchSubmissionData(sub);
-            
-            results[sub.id] = result.data;
-            
-            // Remove loading state
-            if(cardEl) {
-              cardEl.classList.remove('loading');
-              if(!result.success) {
-                cardEl.classList.add('error');
-              }
-            }
-            
-            if(result.success && result.data.votes !== null) {
-              clog(`✅ ${sub.name}: ${result.data.votes} votes (${result.method})`);
-            } else {
-              clog(`❌ ${sub.name}: Failed to fetch data`);
-            }
-          } catch(e) {
-            clog(`❌ ${sub.name}: ${e.message}`);
-            results[sub.id] = {votes: null, views: null};
-            
-            // Set error state
-            const cardEl = document.getElementById(`card-${sub.id}`);
-            if(cardEl) {
-              cardEl.classList.remove('loading');
-              cardEl.classList.add('error');
-            }
-          }
-          
-          // Update progress
-          completed++;
-          const progress = (completed / total) * 100;
-          progressBarEl.style.width = `${progress}%`;
-          
-          // Update status
-          statusEl.innerText = `Fetching... ${completed}/${total}`;
-        });
-        
-        return Promise.allSettled(batchPromises);
-      };
-      
-      // Split submissions into batches
-      const batches = [];
-      for(let i = 0; i < SUBMISSIONS.length; i += CONCURRENT_REQUESTS) {
-        batches.push(SUBMISSIONS.slice(i, i + CONCURRENT_REQUESTS));
-      }
-      
-      // Process batches sequentially but each batch in parallel
-      for(const batch of batches) {
-        await processBatch(batch);
-      }
-      
-      const successCount = Object.values(results).filter(r => r.votes !== null).length;
-      return {results, successCount};
     }
 
     // Create submission cards
@@ -520,46 +242,33 @@
 
     // UI update function
     function updateUI(data){
-      let activeCount = 0;
-      
       // Update individual submission cards
       SUBMISSIONS.forEach(sub => {
         const votesEl = document.getElementById(`votes-${sub.id}`);
         const viewsEl = document.getElementById(`views-${sub.id}`);
         const deltaEl = document.getElementById(`delta-${sub.id}`);
         const rateEl = document.getElementById(`rate-${sub.id}`);
-        const cardEl = document.getElementById(`card-${sub.id}`);
         
         const subData = data[sub.id];
-        if (subData && subData.votes !== null) {
-          activeCount++;
+        if (subData) {
           votesEl.innerText = subData.votes.toLocaleString();
-          viewsEl.innerText = subData.views !== null ? (subData.views.toLocaleString() + ' views') : '— views';
+          viewsEl.innerText = subData.views.toLocaleString() + ' views';
           
           // Calculate delta
           let delta = 0;
-          if(lastVotes[sub.id] !== null && subData.votes !== null) {
+          if(lastVotes[sub.id] !== null) {
             delta = subData.votes - lastVotes[sub.id];
           }
           deltaEl.innerText = (delta >= 0 ? '+' + delta : delta);
           deltaEl.className = delta > 0 ? 'small delta-up' : (delta < 0 ? 'small delta-down' : 'small');
           
-          // Calculate rate (votes per second)
+          // Calculate rate
           let rate = 0;
           if(lastTime !== null && delta > 0) {
             const elapsedSec = (Date.now() - lastTime) / 1000;
             rate = delta / elapsedSec;
           }
-          rateEl.innerText = rate > 0 ? rate.toFixed(4) : '—';
-          
-          cardEl.style.opacity = '1';
-          cardEl.classList.remove('error');
-        } else {
-          votesEl.innerText = '—';
-          viewsEl.innerText = '— views';
-          deltaEl.innerText = '—';
-          rateEl.innerText = '—';
-          cardEl.style.opacity = '0.7';
+          rateEl.innerText = rate > 0 ? rate.toFixed(4) : '0.0000';
         }
       });
 
@@ -574,9 +283,7 @@
       sessionDeltaEl.innerText = sessionText || "No changes yet";
 
       // Update leader
-      const validData = SUBMISSIONS.filter(sub => 
-        data[sub.id] && data[sub.id].votes !== null
-      );
+      const validData = SUBMISSIONS.filter(sub => data[sub.id]);
       
       if (validData.length > 0) {
         const leader = validData.reduce((prev, curr) => 
@@ -584,23 +291,8 @@
         );
         const leaderVotes = data[leader.id].votes;
         
-        // Check for ties
-        const tied = validData.filter(sub => 
-          data[sub.id].votes === leaderVotes
-        );
-        
-        if (tied.length > 1) {
-          leadTextEl.innerHTML = `Tie: ${tied.map(t => t.name).join(', ')} with ${leaderVotes.toLocaleString()} votes`;
-        } else {
-          leadTextEl.innerHTML = `${leader.name} leading with <strong>${leaderVotes.toLocaleString()}</strong> votes`;
-        }
-      } else {
-        leadTextEl.innerText = 'No data available';
+        leadTextEl.innerHTML = `${leader.name} leading with <strong>${leaderVotes.toLocaleString()}</strong> votes`;
       }
-
-      // Update success rate
-      const successRate = totalAttempts > 0 ? Math.round((successCount / totalAttempts) * 100) : 0;
-      successRateEl.textContent = `${successRate}%`;
 
       lastUpdateEl.innerText = new Date().toLocaleTimeString();
     }
@@ -608,7 +300,6 @@
     // Chart.js setup
     const ctx = document.getElementById('votesChart').getContext('2d');
     
-    // Generate colors for all submissions
     const colors = [
       '#6bc1ff', '#ff6b6b', '#6ee7b7', '#f59e0b', '#a78bfa', 
       '#f97316', '#10b981', '#8b5cf6'
@@ -621,8 +312,7 @@
       backgroundColor: colors[index % colors.length] + '20',
       tension: 0.2,
       pointRadius: 2,
-      borderWidth: 2,
-      hidden: false
+      borderWidth: 2
     }));
     
     const chart = new Chart(ctx, {
@@ -637,15 +327,12 @@
         maintainAspectRatio: false,
         scales: {
           x: { 
-            display: true, 
-            title: { display: false },
-            ticks: {
-              maxTicksLimit: 8
-            }
+            display: true,
+            ticks: { maxTicksLimit: 8 }
           },
           y: { 
-            display: true, 
-            beginAtZero: false, 
+            display: true,
+            beginAtZero: false,
             title: { display: true, text: 'Votes' } 
           }
         },
@@ -654,9 +341,7 @@
             display: true,
             labels: {
               boxWidth: 12,
-              font: {
-                size: 11
-              }
+              font: { size: 11 }
             }
           } 
         }
@@ -664,38 +349,31 @@
     });
 
     // main polling function
-    async function pollOnce(){
+    function pollOnce(){
       const startTime = performance.now();
       
       try {
-        // Fetch all submissions
-        const {results, successCount} = await fetchAllSubmissions();
-        
-        const now = Date.now();
         const data = {};
+        const now = Date.now();
         
-        // Process results
+        // Get data for all submissions
         SUBMISSIONS.forEach(sub => {
-          const extracted = results[sub.id];
+          const mockData = getMockData(sub.id);
+          data[sub.id] = mockData;
           
           // Compute deltas
           let delta = 0;
-          if(lastTime !== null && lastVotes[sub.id] !== null && extracted.votes !== null){
-            delta = extracted.votes - lastVotes[sub.id];
+          if(lastTime !== null && lastVotes[sub.id] !== null){
+            delta = mockData.votes - lastVotes[sub.id];
           }
           
           // Update session totals
-          if(delta) sessionDelta[sub.id] += delta;
-          
-          // Store data
-          data[sub.id] = {
-            votes: extracted.votes,
-            views: extracted.views,
-            delta: delta
-          };
+          if(delta > 0) {
+            sessionDelta[sub.id] += delta;
+          }
           
           // Update last votes
-          lastVotes[sub.id] = extracted.votes;
+          lastVotes[sub.id] = mockData.votes;
         });
         
         // Push history
@@ -703,11 +381,11 @@
         historyLabels.push(label);
         
         SUBMISSIONS.forEach(sub => {
-          historyData[sub.id].push(data[sub.id].votes ?? null);
+          historyData[sub.id].push(data[sub.id].votes);
         });
         
         // Keep history limited
-        if(historyLabels.length > 50){ 
+        if(historyLabels.length > 30){ 
           historyLabels.shift(); 
           SUBMISSIONS.forEach(sub => {
             historyData[sub.id].shift();
@@ -715,61 +393,45 @@
         }
 
         // Update chart
-        chart.data.labels = historyLabels.slice();
+        chart.data.labels = historyLabels;
         SUBMISSIONS.forEach((sub, index) => {
-          chart.data.datasets[index].data = historyData[sub.id].slice();
+          chart.data.datasets[index].data = historyData[sub.id];
         });
         chart.update('none');
 
-        // Update UI elements
+        // Update UI
         updateUI(data);
 
         // Update last time
         lastTime = now;
 
         const elapsedMs = Math.round(performance.now() - startTime);
-        statusEl.innerText = `OK - ${successCount}/8 submissions - ${elapsedMs}ms`;
+        statusEl.innerText = `OK - ${elapsedMs}ms`;
         
-        clog(`✅ Completed in ${elapsedMs}ms - ${successCount}/8 successful`);
+        clog(`Update completed - ${elapsedMs}ms`);
         
       } catch(err) {
         statusEl.innerText = 'Error: ' + err.message;
-        clog('❌ Error in poll: ' + err.message);
+        clog('Error: ' + err.message);
       }
     }
 
     // Event listeners
     refreshBtn.addEventListener('click', () => {
-      clog("Manual refresh triggered");
+      clog("Manual refresh");
       pollOnce();
     });
 
-    toggleAutoBtn.addEventListener('click', () => {
-      isAutoUpdate = !isAutoUpdate;
-      if(isAutoUpdate) {
-        clearInterval(updateInterval);
-        updateInterval = setInterval(pollOnce, INTERVAL_MS);
-        toggleAutoBtn.textContent = '⏸️ Pause Auto';
-        clog("Auto-update resumed");
-      } else {
-        clearInterval(updateInterval);
-        toggleAutoBtn.textContent = '▶️ Resume Auto';
-        clog("Auto-update paused");
-      }
-    });
-
     // Initialize application
-    async function initializeApp() {
+    function initializeApp() {
       createSubmissionCards();
-      clog("🚀 Vote Comparator starting with DIRECT fetch...");
-      clog("Using mock data simulation for demonstration");
+      clog("Vote Comparator started with mock data");
       
       // First poll
-      await pollOnce();
+      pollOnce();
       
       // Start auto-update
-      updateInterval = setInterval(pollOnce, INTERVAL_MS);
-      clog(`Auto-update started (${INTERVAL_MS}ms interval)`);
+      setInterval(pollOnce, INTERVAL_MS);
     }
 
     // Start the application
