@@ -1,509 +1,327 @@
-// ==UserScript==
-// @name         MotionIme Fest Live Vote Tracker
-// @namespace    http://tampermonkey.net/
-// @version      2.0
-// @description  Real-time vote tracking langsung di website
-// @author       You
-// @match        https://motionimefest.id/*
-// @grant        GM_xmlhttpRequest
-// @connect      motionimefest.id
-// ==/UserScript==
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Vote Tracker - MotionIme Fest</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
 
-(function() {
-    'use strict';
-    
-    // Config
-    const SUBMISSIONS = [
-        { id: "24087", name: "xxknjt" },
-        { id: "24084", name: "boo" },
-        { id: "24081", name: "JustDani" },
-        { id: "24078", name: "SonMV" },
-        { id: "24075", name: "KekeLawar" },
-        { id: "24066", name: "searchforemma" },
-        { id: "24072", name: "YaraYay" },
-        { id: "24069", name: "Wasawho" }
-    ];
-    
-    const UPDATE_INTERVAL = 5000; // 5 detik
-    const BASE_URL = "https://motionimefest.id/contest/newcomer-streamer-of-the-year/submission";
-    
-    // State
-    let lastVotes = {};
-    let sessionDelta = {};
-    let isTracking = false;
-    let updateInterval;
-    
-    // Initialize state
-    SUBMISSIONS.forEach(sub => {
-        lastVotes[sub.id] = null;
-        sessionDelta[sub.id] = 0;
-    });
-    
-    // CSS Styles
-    const styles = `
-    .vote-tracker-container {
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        width: 380px;
-        background: linear-gradient(135deg, #0b1622 0%, #07121b 100%);
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 12px;
-        padding: 16px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-        font-family: 'Inter', system-ui, sans-serif;
-        color: #e6eef8;
-        z-index: 10000;
-        backdrop-filter: blur(10px);
-    }
-    
-    .tracker-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 12px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid rgba(255,255,255,0.1);
-    }
-    
-    .tracker-title {
-        font-size: 16px;
-        font-weight: 700;
-        margin: 0;
-        color: #6bc1ff;
-    }
-    
-    .tracker-controls {
-        display: flex;
-        gap: 8px;
-    }
-    
-    .tracker-btn {
-        background: rgba(107, 193, 255, 0.1);
-        border: 1px solid rgba(107, 193, 255, 0.3);
-        color: #6bc1ff;
-        padding: 4px 8px;
-        border-radius: 6px;
-        font-size: 11px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-    
-    .tracker-btn:hover {
-        background: rgba(107, 193, 255, 0.2);
-    }
-    
-    .tracker-btn.stop {
-        background: rgba(255, 107, 107, 0.1);
-        border-color: rgba(255, 107, 107, 0.3);
-        color: #ff6b6b;
-    }
-    
-    .submissions-grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 8px;
-        max-height: 400px;
-        overflow-y: auto;
-    }
-    
-    .submission-card {
-        background: rgba(255,255,255,0.03);
-        border: 1px solid rgba(255,255,255,0.05);
-        border-radius: 8px;
-        padding: 10px;
-        transition: all 0.3s ease;
-    }
-    
-    .submission-card:hover {
-        background: rgba(255,255,255,0.05);
-        border-color: rgba(107, 193, 255, 0.2);
-    }
-    
-    .submission-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 6px;
-    }
-    
-    .submission-name {
-        font-size: 13px;
-        font-weight: 600;
-        margin: 0;
-    }
-    
-    .submission-id {
-        font-size: 11px;
-        color: #98a6b8;
-    }
-    
-    .submission-stats {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    
-    .vote-count {
-        font-size: 18px;
-        font-weight: 700;
-    }
-    
-    .view-count {
-        font-size: 11px;
-        color: #98a6b8;
-    }
-    
-    .delta-section {
-        text-align: right;
-    }
-    
-    .delta {
-        font-size: 12px;
-        font-weight: 600;
-    }
-    
-    .delta.positive {
-        color: #6ee7b7;
-    }
-    
-    .delta.negative {
-        color: #ff8b8b;
-    }
-    
-    .rate {
-        font-size: 10px;
-        color: #98a6b8;
-        margin-top: 2px;
-    }
-    
-    .tracker-summary {
-        margin-top: 12px;
-        padding-top: 8px;
-        border-top: 1px solid rgba(255,255,255,0.1);
-        font-size: 12px;
-    }
-    
-    .leader-info {
-        font-weight: 600;
-        color: #6ee7b7;
-        margin-bottom: 4px;
-    }
-    
-    .session-delta {
-        color: #98a6b8;
-        font-size: 11px;
-    }
-    
-    .last-update {
-        color: #98a6b8;
-        font-size: 10px;
-        text-align: center;
-        margin-top: 8px;
-    }
-    
-    /* Scrollbar styling */
-    .submissions-grid::-webkit-scrollbar {
-        width: 4px;
-    }
-    
-    .submissions-grid::-webkit-scrollbar-track {
-        background: rgba(255,255,255,0.05);
-        border-radius: 2px;
-    }
-    
-    .submissions-grid::-webkit-scrollbar-thumb {
-        background: rgba(107, 193, 255, 0.3);
-        border-radius: 2px;
-    }
-    `;
-    
-    // Inject CSS
-    const styleSheet = document.createElement("style");
-    styleSheet.textContent = styles;
-    document.head.appendChild(styleSheet);
-    
-    // Create tracker UI
-    function createTracker() {
-        const container = document.createElement('div');
-        container.className = 'vote-tracker-container';
-        container.innerHTML = `
-            <div class="tracker-header">
-                <h3 class="tracker-title">🎯 Live Vote Tracker</h3>
-                <div class="tracker-controls">
-                    <button class="tracker-btn" id="startTracker">▶ Start</button>
-                    <button class="tracker-btn stop" id="stopTracker">⏹ Stop</button>
-                    <button class="tracker-btn" id="refreshTracker">🔄 Now</button>
-                </div>
-            </div>
-            
-            <div class="submissions-grid" id="submissionsGrid">
-                ${SUBMISSIONS.map(sub => `
-                    <div class="submission-card" id="card-${sub.id}">
-                        <div class="submission-header">
-                            <span class="submission-name">${sub.name}</span>
-                            <span class="submission-id">${sub.id}</span>
-                        </div>
-                        <div class="submission-stats">
-                            <div>
-                                <div class="vote-count" id="votes-${sub.id}">—</div>
-                                <div class="view-count" id="views-${sub.id}">— views</div>
-                            </div>
-                            <div class="delta-section">
-                                <div class="delta" id="delta-${sub.id}">—</div>
-                                <div class="rate" id="rate-${sub.id}">— v/s</div>
-                            </div>
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-            
-            <div class="tracker-summary">
-                <div class="leader-info" id="leaderText">—</div>
-                <div class="session-delta" id="sessionDelta">Session Δ: —</div>
-                <div class="last-update" id="lastUpdate">Last update: —</div>
-            </div>
-        `;
-        
-        document.body.appendChild(container);
-        
-        // Add event listeners
-        document.getElementById('startTracker').addEventListener('click', startTracking);
-        document.getElementById('stopTracker').addEventListener('click', stopTracking);
-        document.getElementById('refreshTracker').addEventListener('click', fetchAllData);
-        
-        // Make draggable
-        makeDraggable(container);
-    }
-    
-    // Make tracker draggable
-    function makeDraggable(element) {
-        let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-        element.onmousedown = dragMouseDown;
-        
-        function dragMouseDown(e) {
-            e = e || window.event;
-            e.preventDefault();
-            pos3 = e.clientX;
-            pos4 = e.clientY;
-            document.onmouseup = closeDragElement;
-            document.onmousemove = elementDrag;
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #f8fafc;
+            min-height: 100vh;
+            padding: 20px;
         }
-        
-        function elementDrag(e) {
-            e = e || window.event;
-            e.preventDefault();
-            pos1 = pos3 - e.clientX;
-            pos2 = pos4 - e.clientY;
-            pos3 = e.clientX;
-            pos4 = e.clientY;
-            element.style.top = (element.offsetTop - pos2) + "px";
-            element.style.left = (element.offsetLeft - pos1) + "px";
-            element.style.right = "auto";
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
         }
-        
-        function closeDragElement() {
-            document.onmouseup = null;
-            document.onmousemove = null;
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
         }
-    }
-    
-    // Fetch data for a single submission
-    function fetchSubmissionData(sub) {
-        return new Promise((resolve) => {
-            const url = `${BASE_URL}/${sub.id}/?cid=23816&cm=1&_=${Date.now()}`;
-            
-            GM_xmlhttpRequest({
-                method: "GET",
-                url: url,
-                onload: function(response) {
-                    try {
-                        const html = response.responseText;
-                        const voteMatch = html.match(/([\d,.]+)\s*Votes/i);
-                        const viewMatch = html.match(/([\d,.]+)\s*Views/i);
-                        
-                        const votes = voteMatch ? parseInt(voteMatch[1].replace(/[,.]/g, "")) : null;
-                        const views = viewMatch ? parseInt(viewMatch[1].replace(/[,.]/g, "")) : null;
-                        
-                        resolve({
-                            ...sub,
-                            votes,
-                            views,
-                            success: true,
-                            timestamp: Date.now()
-                        });
-                    } catch (error) {
-                        resolve({
-                            ...sub,
-                            error: error.message,
-                            success: false
-                        });
-                    }
-                },
-                onerror: function(error) {
-                    resolve({
-                        ...sub,
-                        error: error.statusText,
-                        success: false
-                    });
-                },
-                timeout: 10000
-            });
-        });
-    }
-    
-    // Fetch data for all submissions
-    async function fetchAllData() {
-        if (!isTracking) return;
-        
-        const startTime = Date.now();
-        const results = await Promise.all(SUBMISSIONS.map(fetchSubmissionData));
-        const now = Date.now();
-        
-        let leader = null;
-        let maxVotes = -1;
-        
-        results.forEach(result => {
-            if (result.success && result.votes !== null) {
-                const sub = result;
-                
-                // Calculate delta
-                let delta = 0;
-                if (lastVotes[sub.id] !== null) {
-                    delta = sub.votes - lastVotes[sub.id];
-                }
-                
-                // Update session delta
-                if (delta > 0) {
-                    sessionDelta[sub.id] += delta;
-                }
-                
-                // Update UI
-                updateSubmissionUI(sub, delta, now);
-                
-                // Track leader
-                if (sub.votes > maxVotes) {
-                    maxVotes = sub.votes;
-                    leader = sub;
-                }
-                
-                // Store current votes
-                lastVotes[sub.id] = sub.votes;
-            } else {
-                // Show error state
-                const card = document.getElementById(`card-${result.id}`);
-                if (card) {
-                    card.style.opacity = '0.6';
-                }
+
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #94a3b8;
+            font-size: 1.1rem;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #60a5fa;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .btn:hover {
+            background: rgba(59, 130, 246, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .btn.start {
+            background: rgba(34, 197, 94, 0.1);
+            border-color: rgba(34, 197, 94, 0.3);
+            color: #4ade80;
+        }
+
+        .btn.stop {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #f87171;
+        }
+
+        .status-bar {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+        }
+
+        .status-badge {
+            background: rgba(59, 130, 246, 0.2);
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }
+
+        .submissions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .submission-card {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .submission-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #60a5fa, #3b82f6);
+        }
+
+        .submission-card.leader {
+            border-color: rgba(34, 197, 94, 0.5);
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.2);
+        }
+
+        .submission-card.leader::before {
+            background: linear-gradient(90deg, #4ade80, #22c55e);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .submission-name {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #f1f5f9;
+        }
+
+        .submission-id {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            background: rgba(148, 163, 184, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+
+        .votes .stat-value {
+            color: #60a5fa;
+        }
+
+        .views .stat-value {
+            color: #c084fc;
+        }
+
+        .delta-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .delta {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .delta.positive {
+            color: #4ade80;
+        }
+
+        .delta.negative {
+            color: #f87171;
+        }
+
+        .rate {
+            font-size: 0.8rem;
+            color: #94a3b8;
+        }
+
+        .chart-container {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .log-container {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.8rem;
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .log-time {
+            color: #60a5fa;
+        }
+
+        .log-message {
+            color: #f1f5f9;
+        }
+
+        .loading {
+            opacity: 0.6;
+        }
+
+        @media (max-width: 768px) {
+            .submissions-grid {
+                grid-template-columns: 1fr;
             }
-        });
-        
-        // Update leader and summary
-        if (leader) {
-            document.getElementById('leaderText').textContent = 
-                `🏆 ${leader.name}: ${leader.votes.toLocaleString()} votes`;
-        }
-        
-        // Update session delta display
-        const totalDelta = Object.values(sessionDelta).reduce((sum, delta) => sum + delta, 0);
-        document.getElementById('sessionDelta').textContent = 
-            `Session Δ: +${totalDelta} votes`;
-        
-        // Update last update time
-        document.getElementById('lastUpdate').textContent = 
-            `Last update: ${new Date().toLocaleTimeString()}`;
-        
-        console.log(`✅ Vote data updated in ${Date.now() - startTime}ms`);
-    }
-    
-    // Update UI for a single submission
-    function updateSubmissionUI(sub, delta, currentTime) {
-        const votesEl = document.getElementById(`votes-${sub.id}`);
-        const viewsEl = document.getElementById(`views-${sub.id}`);
-        const deltaEl = document.getElementById(`delta-${sub.id}`);
-        const rateEl = document.getElementById(`rate-${sub.id}`);
-        const cardEl = document.getElementById(`card-${sub.id}`);
-        
-        if (votesEl) votesEl.textContent = sub.votes.toLocaleString();
-        if (viewsEl) viewsEl.textContent = sub.views ? `${sub.views.toLocaleString()} views` : '— views';
-        
-        // Update delta
-        if (deltaEl) {
-            if (delta > 0) {
-                deltaEl.textContent = `+${delta}`;
-                deltaEl.className = 'delta positive';
-            } else if (delta < 0) {
-                deltaEl.textContent = `${delta}`;
-                deltaEl.className = 'delta negative';
-            } else {
-                deltaEl.textContent = '0';
-                deltaEl.className = 'delta';
+            
+            .status-bar {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
             }
         }
-        
-        // Calculate and update rate (votes per second)
-        if (rateEl && delta > 0) {
-            const elapsedSinceLastUpdate = (currentTime - (lastVotes[sub.id] !== null ? currentTime : currentTime)) / 1000;
-            const rate = elapsedSinceLastUpdate > 0 ? delta / elapsedSinceLastUpdate : 0;
-            rateEl.textContent = `${rate.toFixed(2)} v/s`;
-        }
-        
-        // Highlight card on update
-        if (cardEl && delta > 0) {
-            cardEl.style.background = 'rgba(110, 231, 183, 0.1)';
-            cardEl.style.borderColor = 'rgba(110, 231, 183, 0.3)';
-            setTimeout(() => {
-                cardEl.style.background = '';
-                cardEl.style.borderColor = '';
-            }, 1000);
-        }
-    }
-    
-    // Start auto-tracking
-    function startTracking() {
-        if (isTracking) return;
-        
-        isTracking = true;
-        document.getElementById('startTracker').style.display = 'none';
-        document.getElementById('stopTracker').style.display = 'block';
-        
-        console.log('🚀 Starting live vote tracking...');
-        
-        // Initial fetch
-        fetchAllData();
-        
-        // Set up interval
-        updateInterval = setInterval(fetchAllData, UPDATE_INTERVAL);
-    }
-    
-    // Stop auto-tracking
-    function stopTracking() {
-        isTracking = false;
-        document.getElementById('startTracker').style.display = 'block';
-        document.getElementById('stopTracker').style.display = 'none';
-        
-        if (updateInterval) {
-            clearInterval(updateInterval);
-            updateInterval = null;
-        }
-        
-        console.log('⏹ Live vote tracking stopped');
-    }
-    
-    // Initialize tracker
-    function init() {
-        // Wait for page to load
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', createTracker);
-        } else {
-            createTracker();
-        }
-        
-        // Auto-start after 2 seconds
-        setTimeout(startTracking, 2000);
-    }
-    
-    // Start the tracker
-    init();
-    
-})();
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 Live Vote Tracker</h1>
+            <p>MotionIme Fest - Newcomer Streamer of the Year</p>
+        </div>
+
+        <div class="controls">
+            <button class="btn start" id="startBtn">▶ Start Auto-Update</button>
+            <button class="btn stop" id="stopBtn">⏹ Stop</button>
+            <button class="btn" id="refreshBtn">🔄 Update Now</button>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-item">
+                <span>Status:</span>
+                <span class="status-badge" id="statusText">Ready</span>
+            </div>
+            <div class="status-item">
+                <span>Leader:</span>
+                <span id="leaderText">-</span>
+            </div>
+            <div class="status-item">
+                <span>Last Update:</span>
+                <span id="lastUpdate">-</span>
+            </div>
+            <div class="status-item">
+                <span>Next Update:</span>
+                <span id="nextUpdate">-</span>
+            </div>
+        </div>
+
+        <div class="submissions-grid" id="submissionsGrid">
+            <!-- Cards will be populated by JavaScript -->
+        </div>
+
+        <div class="chart-container">
+            <canvas id="votesChart" height="100"></canvas>
+        </div>
+
+        <div class="log-container" id="logContainer">
+            <div class="log-entry">
+                <span class="log-time">[System]</span>
+                <span class="log-message"> Live Vote Tracker Ready</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
