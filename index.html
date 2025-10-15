@@ -42,6 +42,11 @@
     padding: 12px;
     border-radius: 10px;
     box-shadow: 0 8px 30px rgba(2,6,23,0.6);
+    transition: all 0.3s ease;
+  }
+  .submission-card.loading {
+    opacity: 0.6;
+    border-color: rgba(255,255,255,0.1);
   }
   .submission-card h3 {
     margin: 0 0 6px;
@@ -63,6 +68,22 @@
     text-align: right;
   }
   
+  /* Progress bar */
+  .progress-container {
+    width: 100%;
+    height: 4px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #6bc1ff, #6ee7b7);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+  
   @media (max-width: 860px) { 
     .submissions-grid { grid-template-columns: repeat(2, 1fr); }
   }
@@ -76,13 +97,18 @@
     <header>
       <div>
         <h1>Vote Comparator — All Submissions</h1>
-        <p class="lead">Realtime tracking for all 8 submissions. Auto-update every <strong>5s</strong>.</p>
+        <p class="lead">Realtime tracking for all 8 submissions. Auto-update every <strong>2.5s</strong>.</p>
       </div>
       <div style="text-align:right">
         <div style="font-size:12px;color:var(--muted)">Status:</div>
         <div id="status" class="small muted">Initializing…</div>
       </div>
     </header>
+
+    <!-- Progress Bar -->
+    <div class="progress-container">
+      <div id="progressBar" class="progress-bar" style="width: 0%"></div>
+    </div>
 
     <!-- All Submissions Grid -->
     <div class="submissions-grid" id="submissionsGrid">
@@ -107,8 +133,8 @@
         <div id="lastUpdate" style="font-weight:700;font-size:14px">—</div>
       </div>
       <div class="stat">
-        <div class="small muted">Active Submissions</div>
-        <div id="activeCount" style="font-weight:700;font-size:14px">0/8</div>
+        <div class="small muted">Fetch Speed</div>
+        <div id="fetchSpeed" style="font-weight:700;font-size:14px">—</div>
       </div>
     </div>
 
@@ -118,7 +144,7 @@
     </div>
 
     <footer>
-      <div class="small muted">Using sequential fetching with delays to avoid blocking. If data doesn't update, try refreshing.</div>
+      <div class="small muted">Using parallel fetching with 4 concurrent requests for maximum speed.</div>
     </footer>
   </div>
 
@@ -126,8 +152,9 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
   (function(){
-    // CONFIG - Increased interval to reduce load
-    const INTERVAL_MS = 5000; // 5s
+    // CONFIG - Back to faster interval
+    const INTERVAL_MS = 2500; // 2.5s
+    const CONCURRENT_REQUESTS = 4; // Number of parallel requests
     
     // All 8 submissions
     const SUBMISSIONS = [
@@ -141,7 +168,7 @@
       { id: "24066", name: "searchforemma" }
     ];
     
-    // Single pre-flight URL (reduced from multiple)
+    // Single pre-flight URL
     const PREFLIGHT_URL = "https://motionimefest.id/contest/newcomer-streamer-of-the-year/submissions/?cid=23816&cm=1&sd=desc&sb=date&cpn=1";
     
     const URL_TEMPLATE = (id) => `https://motionimefest.id/contest/newcomer-streamer-of-the-year/submission/${id}/?cid=23816&cm=1`;
@@ -161,7 +188,8 @@
     const leadTextEl = document.getElementById('leadText');
     const sessionDeltaEl = document.getElementById('sessionDelta');
     const lastUpdateEl = document.getElementById('lastUpdate');
-    const activeCountEl = document.getElementById('activeCount');
+    const fetchSpeedEl = document.getElementById('fetchSpeed');
+    const progressBarEl = document.getElementById('progressBar');
 
     // state
     let lastVotes = {};
@@ -170,6 +198,7 @@
     let historyLabels = [];
     let historyData = {};
     let activeSubmissions = 0;
+    let fetchTimes = [];
 
     // Initialize state
     SUBMISSIONS.forEach(sub => {
@@ -191,7 +220,6 @@
     // helper: parse numbers like "3,768" or "90.123"
     function parseNumber(s){
       if(!s) return null;
-      // Handle both "1,234" and "1234" formats
       const clean = s.replace(/,/g, '');
       const digits = clean.replace(/[^\d]/g, '');
       return digits ? parseInt(digits,10) : null;
@@ -200,7 +228,6 @@
     // Improved parsing function
     function extractVotesViews(html){
       try {
-        // More robust parsing
         const tmp = document.createElement('div');
         tmp.innerHTML = html;
         const text = tmp.textContent || tmp.innerText || '';
@@ -248,23 +275,30 @@
       }
     }
 
-    // Enhanced fetch with better error handling
+    // Enhanced fetch with better error handling and timeout
     async function fetchWithFallback(url, attempt = 0){
-      const maxAttempts = 3;
+      const maxAttempts = 2;
+      const timeoutMs = 8000; // 8 second timeout
+      
+      // Create timeout promise
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+      );
       
       // Try direct first
       if(attempt === 0) {
         try {
-          const r = await fetch(url, {
+          const fetchPromise = fetch(url, {
             method: 'GET',
             mode: 'cors',
             headers: {
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-              'Accept-Language': 'en-US,en;q=0.5',
               'Cache-Control': 'no-cache'
             },
             cache: 'no-cache'
           });
+          
+          const r = await Promise.race([fetchPromise, timeoutPromise]);
           
           if(r.ok){
             const txt = await r.text();
@@ -284,12 +318,14 @@
         const proxyUrl = proxy(url);
         
         try {
-          const r = await fetch(proxyUrl, {
+          const fetchPromise = fetch(proxyUrl, {
             method: 'GET',
             headers: {
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             }
           });
+          
+          const r = await Promise.race([fetchPromise, timeoutPromise]);
           
           if(r.ok){
             const txt = await r.text();
@@ -301,25 +337,75 @@
           // Try next attempt
         }
         
-        // Wait before retry
-        await new Promise(resolve => setTimeout(resolve, 500));
         return fetchWithFallback(url, attempt + 1);
       }
       
       throw new Error(`Failed to fetch after ${maxAttempts} attempts`);
     }
 
-    // Simplified pre-flight request
-    async function makePreflightRequest() {
-      try {
-        clog("Making pre-flight request...");
-        await fetchWithFallback(PREFLIGHT_URL);
-        clog("Pre-flight completed");
-        return true;
-      } catch (e) {
-        clog(`Pre-flight failed: ${e.message}`);
-        return false;
+    // Parallel fetching with concurrency control
+    async function fetchAllSubmissionsParallel() {
+      const results = {};
+      let completed = 0;
+      const total = SUBMISSIONS.length;
+      
+      // Update progress bar
+      progressBarEl.style.width = '0%';
+      
+      // Function to process a batch of submissions
+      const processBatch = async (batch) => {
+        const batchPromises = batch.map(async (sub) => {
+          try {
+            // Set loading state
+            const cardEl = document.getElementById(`card-${sub.id}`);
+            if(cardEl) cardEl.classList.add('loading');
+            
+            const result = await fetchWithFallback(URL_TEMPLATE(sub.id));
+            const extracted = extractVotesViews(result.html);
+            
+            results[sub.id] = extracted;
+            
+            // Remove loading state
+            if(cardEl) cardEl.classList.remove('loading');
+            
+            if(extracted.votes !== null) {
+              clog(`✓ ${sub.name}: ${extracted.votes} votes`);
+            } else {
+              clog(`✗ ${sub.name}: No data found`);
+            }
+          } catch(e) {
+            clog(`✗ ${sub.name}: ${e.message}`);
+            results[sub.id] = {votes: null, views: null};
+            
+            // Remove loading state on error too
+            const cardEl = document.getElementById(`card-${sub.id}`);
+            if(cardEl) cardEl.classList.remove('loading');
+          }
+          
+          // Update progress
+          completed++;
+          const progress = (completed / total) * 100;
+          progressBarEl.style.width = `${progress}%`;
+          
+          // Update status
+          statusEl.innerText = `Fetching... ${completed}/${total}`;
+        });
+        
+        return Promise.allSettled(batchPromises);
+      };
+      
+      // Split submissions into batches
+      const batches = [];
+      for(let i = 0; i < SUBMISSIONS.length; i += CONCURRENT_REQUESTS) {
+        batches.push(SUBMISSIONS.slice(i, i + CONCURRENT_REQUESTS));
       }
+      
+      // Process batches sequentially but each batch in parallel
+      for(const batch of batches) {
+        await processBatch(batch);
+      }
+      
+      return {results, successCount: Object.values(results).filter(r => r.votes !== null).length};
     }
 
     // Create submission cards
@@ -337,7 +423,7 @@
               <div id="views-${sub.id}" class="small muted">— views</div>
             </div>
             <div class="submission-delta">
-              <div class="small muted">Δ per 5s</div>
+              <div class="small muted">Δ per 2.5s</div>
               <div id="delta-${sub.id}" class="small">—</div>
               <div class="small muted" style="margin-top:6px">Rate (v/s)</div>
               <div id="rate-${sub.id}" class="small">—</div>
@@ -379,7 +465,6 @@
       });
 
       // Update active count
-      activeCountEl.textContent = `${activeCount}/8`;
       activeSubmissions = activeCount;
 
       // Update session delta
@@ -478,51 +563,13 @@
       }
     });
 
-    // Sequential fetching with delays to avoid blocking
-    async function fetchAllSubmissions() {
-      const results = {};
-      let successCount = 0;
-      
-      for(let i = 0; i < SUBMISSIONS.length; i++) {
-        const sub = SUBMISSIONS[i];
-        
-        try {
-          statusEl.innerText = `Fetching ${sub.name} (${i+1}/${SUBMISSIONS.length})...`;
-          const result = await fetchWithFallback(URL_TEMPLATE(sub.id));
-          const extracted = extractVotesViews(result.html);
-          
-          results[sub.id] = extracted;
-          
-          if(extracted.votes !== null) {
-            successCount++;
-            clog(`✓ ${sub.name}: ${extracted.votes} votes`);
-          } else {
-            clog(`✗ ${sub.name}: No data found`);
-          }
-        } catch(e) {
-          clog(`✗ ${sub.name}: ${e.message}`);
-          results[sub.id] = {votes: null, views: null};
-        }
-        
-        // Add delay between requests (except last one)
-        if(i < SUBMISSIONS.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 800));
-        }
-      }
-      
-      return {results, successCount};
-    }
-
     // main polling function
     async function pollOnce(){
       const startTime = performance.now();
       
       try {
-        // Make single pre-flight request
-        await makePreflightRequest();
-        
-        // Fetch all submissions sequentially
-        const {results, successCount} = await fetchAllSubmissions();
+        // Fetch all submissions in parallel with concurrency control
+        const {results, successCount} = await fetchAllSubmissionsParallel();
         
         const now = Date.now();
         const data = {};
@@ -584,7 +631,16 @@
         lastTime = now;
 
         const elapsedMs = Math.round(performance.now() - startTime);
+        
+        // Track fetch times for average calculation
+        fetchTimes.push(elapsedMs);
+        if(fetchTimes.length > 5) fetchTimes.shift();
+        const avgFetchTime = fetchTimes.reduce((a, b) => a + b, 0) / fetchTimes.length;
+        
         statusEl.innerText = `OK - ${successCount}/8 submissions - ${elapsedMs}ms`;
+        fetchSpeedEl.textContent = `${elapsedMs}ms (avg: ${Math.round(avgFetchTime)}ms)`;
+        
+        clog(`Completed in ${elapsedMs}ms - ${successCount}/8 successful`);
         
       } catch(err) {
         statusEl.innerText = 'Error: ' + err.message;
@@ -596,7 +652,7 @@
     (async function startLoop(){
       // Create submission cards first
       createSubmissionCards();
-      clog("Vote Comparator started - fetching data every 5 seconds");
+      clog("Vote Comparator started - parallel fetching with 4 concurrent requests");
       
       // first poll immediately
       await pollOnce();
