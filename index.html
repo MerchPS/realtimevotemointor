@@ -1,141 +1,489 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Motionime Vote Tracker - 8 Submissions</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Vote Comparator — All Submissions</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-  body{background:#0b1420;color:#eaf1ff;font-family:Inter,sans-serif;padding:20px;}
-  h1{text-align:center;margin-bottom:10px;}
-  table{width:100%;border-collapse:collapse;margin-top:10px;}
-  th,td{padding:8px 10px;border-bottom:1px solid #243041;text-align:left;}
-  th{background:#132033;}
-  tr:nth-child(even){background:#101b2d;}
-  .up{color:#33ff77;font-weight:bold;}
-  .down{color:#ff6b6b;font-weight:bold;}
-  .status{margin:10px 0;color:#8da1c0;font-size:14px;}
-  footer{text-align:center;color:#697a96;margin-top:20px;font-size:12px;}
+  :root{
+    --bg:#07121b; --card:#0b1622; --muted:#98a6b8; --ycol:#6bc1ff; --wcol:#ff6b6b;
+    --glass: rgba(255,255,255,0.03);
+  }
+  *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;}
+  body{margin:0;background:linear-gradient(180deg,#051022 0%, #071735 100%);color:#e6eef8;min-height:100vh;padding:22px;}
+  .container{max-width:1100px;margin:0 auto;}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+  h1{margin:0;font-size:20px}
+  p.lead{margin:4px 0 0;color:var(--muted);font-size:13px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+  .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.04);padding:12px;border-radius:10px;box-shadow:0 8px 30px rgba(2,6,23,0.6)}
+  .card h3{margin:0 0 6px;font-size:14px}
+  .big{font-size:28px;font-weight:700}
+  .small{color:var(--muted);font-size:12px}
+  .delta-up{color:#6ee7b7;font-weight:700}
+  .delta-down{color:#ff8b8b;font-weight:700}
+  .chart-wrap{background:var(--card);padding:12px;border-radius:10px;margin-bottom:12px}
+  canvas{max-width:100%}
+  .summary{display:flex;gap:12px;flex-wrap:wrap}
+  .stat{background:var(--glass);padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);min-width:160px}
+  .muted{color:var(--muted)}
+  footer{margin-top:14px;color:var(--muted);font-size:13px}
+  .log{height:120px;overflow:auto;background:rgba(0,0,0,0.2);padding:8px;border-radius:8px;font-size:12px;color:#d9e9ff}
+  
+  /* New styles for all submissions */
+  .submissions-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .submission-card {
+    background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border: 1px solid rgba(255,255,255,0.04);
+    padding: 12px;
+    border-radius: 10px;
+    box-shadow: 0 8px 30px rgba(2,6,23,0.6);
+  }
+  .submission-card h3 {
+    margin: 0 0 6px;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .submission-stats {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .submission-votes {
+    font-size: 20px;
+    font-weight: 700;
+  }
+  .submission-delta {
+    text-align: right;
+  }
+  
+  @media (max-width: 860px) { 
+    .grid{grid-template-columns:1fr} 
+    .submissions-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 480px) { 
+    .submissions-grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
-  <h1>📊 MotionimeFest Vote Monitor</h1>
-  <div class="status" id="status">Initializing...</div>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Vote Comparator — All Submissions</h1>
+        <p class="lead">Realtime tracking for all 8 submissions. Auto-update every <strong>2.5s</strong>.</p>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:12px;color:var(--muted)">Status:</div>
+        <div id="status" class="small muted">Initializing…</div>
+      </div>
+    </header>
 
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Nama</th>
-        <th>Votes</th>
-        <th>Δ Votes</th>
-        <th>Views</th>
-        <th>Last Update</th>
-      </tr>
-    </thead>
-    <tbody id="tableBody"></tbody>
-  </table>
+    <!-- All Submissions Grid -->
+    <div class="submissions-grid" id="submissionsGrid">
+      <!-- Will be populated by JavaScript -->
+    </div>
 
-  <footer>Auto refresh setiap 2.5 detik • Reload halaman jika berhenti update</footer>
+    <div class="chart-wrap card">
+      <canvas id="votesChart" height="140"></canvas>
+    </div>
 
-<script>
-const submissions = [
-  {id:24087, name:"xxknjt"},
-  {id:24084, name:"Boo"},
-  {id:24081, name:"JustDani"},
-  {id:24078, name:"SonMV"},
-  {id:24075, name:"KekeLawar"},
-  {id:24066, name:"searchforemma"},
-  {id:24072, name:"YaraYay"},
-  {id:24069, name:"Wasawho"}
-];
+    <div class="card summary">
+      <div class="stat">
+        <div class="small muted">Current Leader</div>
+        <div id="leadText" style="font-weight:700;font-size:16px">—</div>
+      </div>
+      <div class="stat">
+        <div class="small muted">Total Δ (this session)</div>
+        <div id="sessionDelta" style="font-weight:700;font-size:16px">Loading...</div>
+      </div>
+      <div class="stat">
+        <div class="small muted">Last update</div>
+        <div id="lastUpdate" style="font-weight:700;font-size:14px">—</div>
+      </div>
+      <div class="stat">
+        <div class="small muted">Notes</div>
+        <div id="notes" style="font-size:13px">Using pre-flight requests to ensure data freshness.</div>
+      </div>
+    </div>
 
-const PARTICIPATE_URL = "https://motionimefest.id/contest/newcomer-streamer-of-the-year/participate/?cid=23816&cm=1";
-const SUBMISSIONS_URL = "https://motionimefest.id/contest/newcomer-streamer-of-the-year/submissions/?cid=23816&cm=1&sd=desc&sb=date&cpn=1";
-const SUB_BASE = "https://motionimefest.id/contest/newcomer-streamer-of-the-year/submission/";
+    <div style="margin-top:12px" class="card">
+      <div class="small muted">Console log</div>
+      <div id="console" class="log"></div>
+    </div>
 
-const PROXIES = [
-  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  u => `https://thingproxy.freeboard.io/fetch/${u}`
-];
+    <footer>
+      <div class="small muted">Using pre-flight requests to ensure data freshness. If data doesn't update: site blocked CORS/Cloudflare.</div>
+    </footer>
+  </div>
 
-let lastVotes = {};
-let firstRun = true;
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+  (function(){
+    // CONFIG
+    const INTERVAL_MS = 2500; // 2.5s
+    
+    // All 8 submissions
+    const SUBMISSIONS = [
+      { id: "24087", name: "xxknjt" },
+      { id: "24084", name: "ini boo" },
+      { id: "24081", name: "JustDani" },
+      { id: "24078", name: "SonMV" },
+      { id: "24075", name: "KekeLawar" },
+      { id: "24072", name: "Yaraayay" },
+      { id: "24069", name: "Wasawho" },
+      { id: "24066", name: "searchforemma" }
+    ];
+    
+    // URLs for pre-flight requests
+    const PREFLIGHT_URLS = [
+      "https://motionimefest.id/contest/newcomer-streamer-of-the-year/participate/?cid=23816&cm=1",
+      "https://motionimefest.id/contest/newcomer-streamer-of-the-year/submissions/?cid=23816&cm=1&sd=desc&sb=date&cpn=1"
+    ];
+    
+    const URL_TEMPLATE = (id) => `https://motionimefest.id/contest/newcomer-streamer-of-the-year/submission/${id}/?cid=23816&cm=1`;
 
-const statusEl = document.getElementById("status");
-const tbody = document.getElementById("tableBody");
+    // Public CORS proxies (used as fallback if direct fetch blocked)
+    const PROXY_LIST = [
+      url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      url => `https://thingproxy.freeboard.io/fetch/${url}`,
+      url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+    ];
 
-function parseNum(txt){
-  if(!txt)return 0;
-  const n = txt.replace(/[^\d]/g,'');
-  return parseInt(n)||0;
-}
+    // DOM
+    const statusEl = document.getElementById('status');
+    const logEl = document.getElementById('console');
+    const submissionsGridEl = document.getElementById('submissionsGrid');
+    const leadTextEl = document.getElementById('leadText');
+    const sessionDeltaEl = document.getElementById('sessionDelta');
+    const lastUpdateEl = document.getElementById('lastUpdate');
 
-async function fetchWithProxy(url){
-  try {
-    const res = await fetch(url);
-    if(res.ok)return await res.text();
-  } catch{}
-  for(const proxy of PROXIES){
-    try{
-      const res = await fetch(proxy(url));
-      if(res.ok)return await res.text();
-    }catch{}
-  }
-  throw new Error("All fetch failed: "+url);
-}
+    // state
+    let lastVotes = {};
+    let lastTime = null;
+    let sessionDelta = {};
+    let historyLabels = [];
+    let historyData = {};
 
-async function refreshSequence(){
-  try{
-    statusEl.textContent = "Refreshing source cache...";
-    await fetchWithProxy(PARTICIPATE_URL);
-    await fetchWithProxy(SUBMISSIONS_URL);
-    statusEl.textContent = "Fetching 8 submissions...";
-    const results = [];
+    // Initialize state
+    SUBMISSIONS.forEach(sub => {
+      lastVotes[sub.id] = null;
+      sessionDelta[sub.id] = 0;
+      historyData[sub.id] = [];
+    });
 
-    for(const s of submissions){
-      const html = await fetchWithProxy(`${SUB_BASE}${s.id}/?cid=23816&cm=1`);
-      const votesMatch = html.match(/([\d,\.]+)\s*Votes/i);
-      const viewsMatch = html.match(/([\d,\.]+)\s*Views/i);
-      const votes = votesMatch ? parseNum(votesMatch[1]) : 0;
-      const views = viewsMatch ? parseNum(viewsMatch[1]) : 0;
-
-      let delta = 0;
-      if(lastVotes[s.id]!=null) delta = votes - lastVotes[s.id];
-      lastVotes[s.id] = votes;
-
-      results.push({...s, votes, views, delta});
+    // helper: log (console area)
+    function clog(msg){
+      const ts = new Date().toLocaleTimeString();
+      logEl.innerText = `[${ts}] ${msg}\n` + logEl.innerText;
     }
 
-    updateTable(results);
-    firstRun = false;
-    const t = new Date().toLocaleTimeString();
-    statusEl.textContent = `Last updated ${t}`;
-  }catch(e){
-    statusEl.textContent = "Error: "+e.message;
-  }
-}
+    // helper: parse numbers like "3,768" or "90.123"
+    function parseNumber(s){
+      if(!s) return null;
+      const digits = s.replace(/[^\d]/g, '');
+      return digits ? parseInt(digits,10) : null;
+    }
 
-function updateTable(data){
-  tbody.innerHTML = "";
-  data.forEach(r=>{
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${r.id}</td>
-      <td>${r.name}</td>
-      <td>${r.votes.toLocaleString()}</td>
-      <td class="${r.delta>0?"up":r.delta<0?"down":""}">
-        ${!firstRun?(r.delta>=0?`+${r.delta}`:r.delta):"-"}
-      </td>
-      <td>${r.views.toLocaleString()}</td>
-      <td>${new Date().toLocaleTimeString()}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
+    // parse votes/views from fetched HTML string (simple extraction)
+    function extractVotesViews(html){
+      // get plain text
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      const text = tmp.textContent || tmp.innerText || '';
+      // try find "<num> Votes" and "<num> Views"
+      const vMatch = text.match(/([\d\.,]+)\s*Votes/i);
+      const wMatch = text.match(/([\d\.,]+)\s*Views/i);
+      const votes = vMatch ? parseNumber(vMatch[1]) : null;
+      const views = wMatch ? parseNumber(wMatch[1]) : null;
+      return {votes, views};
+    }
 
-refreshSequence();
-setInterval(refreshSequence, 2500);
-</script>
+    // attempt fetch with direct then fallback to proxies
+    async function fetchWithFallback(url){
+      // try direct
+      try{
+        const r = await fetch(url, {method:'GET', mode:'cors'});
+        if(r.ok){
+          const txt = await r.text();
+          // quick check: do we see "Votes" string?
+          if(/Votes/i.test(txt)) return {html: txt, usedProxy:false};
+          clog('Direct fetch returned but no "Votes" text found; will fallback');
+        } else {
+          clog(`Direct fetch status ${r.status}; fallback`);
+        }
+      }catch(e){
+        clog('Direct fetch failed: ' + e.message);
+      }
+      // fallback proxies in order
+      for(const p of PROXY_LIST){
+        const purl = p(url);
+        try{
+          const r2 = await fetch(purl, {method:'GET'});
+          if(r2.ok){
+            const txt2 = await r2.text();
+            if(/Votes/i.test(txt2)){
+              clog(`Fetched via proxy: ${purl}`);
+              return {html: txt2, usedProxy:true, proxyUrl:purl};
+            } else {
+              clog(`Proxy ${purl} responded but no Votes text`);
+            }
+          } else {
+            clog(`Proxy ${purl} status ${r2.status}`);
+          }
+        }catch(e){
+          clog(`Proxy ${purl} failed: ${e.message}`);
+        }
+      }
+      throw new Error('All fetch attempts failed or content not found');
+    }
+
+    // Make pre-flight requests to ensure data freshness
+    async function makePreflightRequests() {
+      clog("Making pre-flight requests...");
+      for (const url of PREFLIGHT_URLS) {
+        try {
+          await fetchWithFallback(url);
+          clog(`Pre-flight to ${url} completed`);
+        } catch (e) {
+          clog(`Pre-flight to ${url} failed: ${e.message}`);
+        }
+      }
+    }
+
+    // Create submission cards
+    function createSubmissionCards() {
+      submissionsGridEl.innerHTML = '';
+      SUBMISSIONS.forEach(sub => {
+        const card = document.createElement('div');
+        card.className = 'submission-card';
+        card.id = `card-${sub.id}`;
+        card.innerHTML = `
+          <h3>${sub.name} — ${sub.id}</h3>
+          <div class="submission-stats">
+            <div>
+              <div id="votes-${sub.id}" class="submission-votes">—</div>
+              <div id="views-${sub.id}" class="small muted">— views</div>
+            </div>
+            <div class="submission-delta">
+              <div class="small muted">Δ per 2.5s</div>
+              <div id="delta-${sub.id}" class="small">—</div>
+              <div class="small muted" style="margin-top:6px">Rate (v/s)</div>
+              <div id="rate-${sub.id}" class="small">—</div>
+            </div>
+          </div>
+        `;
+        submissionsGridEl.appendChild(card);
+      });
+    }
+
+    // UI update function
+    function updateUI(data){
+      // Update individual submission cards
+      SUBMISSIONS.forEach(sub => {
+        const votesEl = document.getElementById(`votes-${sub.id}`);
+        const viewsEl = document.getElementById(`views-${sub.id}`);
+        const deltaEl = document.getElementById(`delta-${sub.id}`);
+        const rateEl = document.getElementById(`rate-${sub.id}`);
+        
+        const subData = data[sub.id];
+        if (subData) {
+          votesEl.innerText = subData.votes !== null ? subData.votes.toLocaleString() : '—';
+          viewsEl.innerText = subData.views !== null ? (subData.views.toLocaleString() + ' views') : '— views';
+          deltaEl.innerText = (subData.delta >= 0 ? '+' + subData.delta : subData.delta);
+          rateEl.innerText = subData.rate !== null ? subData.rate.toFixed(4) : '—';
+        }
+      });
+
+      // Update session delta
+      let sessionText = "";
+      SUBMISSIONS.forEach(sub => {
+        if (sessionText) sessionText += " | ";
+        sessionText += `${sub.name}: ${sessionDelta[sub.id]}`;
+      });
+      sessionDeltaEl.innerText = sessionText;
+
+      // Update leader
+      const validData = SUBMISSIONS.filter(sub => 
+        data[sub.id] && data[sub.id].votes !== null
+      );
+      
+      if (validData.length > 0) {
+        const leader = validData.reduce((prev, curr) => 
+          data[prev.id].votes > data[curr.id].votes ? prev : curr
+        );
+        const leaderVotes = data[leader.id].votes;
+        
+        // Check for ties
+        const tied = validData.filter(sub => 
+          data[sub.id].votes === leaderVotes
+        );
+        
+        if (tied.length > 1) {
+          leadTextEl.innerHTML = `Tie: ${tied.map(t => t.name).join(', ')} with ${leaderVotes.toLocaleString()} votes`;
+        } else {
+          leadTextEl.innerHTML = `${leader.name} leading with <strong>${leaderVotes.toLocaleString()}</strong> votes`;
+        }
+      } else {
+        leadTextEl.innerText = '—';
+      }
+
+      lastUpdateEl.innerText = new Date().toLocaleTimeString();
+    }
+
+    // Chart.js setup
+    const ctx = document.getElementById('votesChart').getContext('2d');
+    
+    // Generate colors for all submissions
+    const colors = [
+      '#6bc1ff', '#ff6b6b', '#6ee7b7', '#f59e0b', '#a78bfa', 
+      '#f97316', '#10b981', '#8b5cf6'
+    ];
+    
+    const chartDatasets = SUBMISSIONS.map((sub, index) => ({
+      label: `${sub.name} (${sub.id})`,
+      data: historyData[sub.id],
+      borderColor: colors[index % colors.length],
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      tension: 0.2,
+      pointRadius: 2,
+      borderWidth: 2
+    }));
+    
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: historyLabels,
+        datasets: chartDatasets
+      },
+      options: {
+        animation:false,
+        responsive:true,
+        maintainAspectRatio:false,
+        scales: {
+          x: { display:true, title:{display:false} },
+          y: { display:true, beginAtZero:false, title:{display:true, text:'Votes'} }
+        },
+        plugins: { legend: { display:true } }
+      }
+    });
+
+    // main polling function
+    async function pollOnce(){
+      statusEl.innerText = 'Making pre-flight requests...';
+      
+      // Make pre-flight requests first
+      await makePreflightRequests();
+      
+      statusEl.innerText = 'Fetching submission data...';
+      const startTime = performance.now();
+      
+      try{
+        // Fetch all submissions in parallel
+        const fetchPromises = SUBMISSIONS.map(sub => 
+          fetchWithFallback(URL_TEMPLATE(sub.id))
+        );
+        
+        const results = await Promise.all(fetchPromises);
+        
+        const now = Date.now();
+        const data = {};
+        
+        // Process results
+        SUBMISSIONS.forEach((sub, index) => {
+          const result = results[index];
+          const extracted = extractVotesViews(result.html);
+          
+          // Compute deltas
+          let delta = 0, rate = null;
+          if(lastTime !== null && lastVotes[sub.id] !== null && extracted.votes !== null){
+            const elapsedSec = (now - lastTime)/1000;
+            delta = extracted.votes - lastVotes[sub.id];
+            rate = delta/elapsedSec;
+          }
+          
+          // Update session totals
+          if(delta) sessionDelta[sub.id] += delta;
+          
+          // Store data
+          data[sub.id] = {
+            votes: extracted.votes,
+            views: extracted.views,
+            delta: delta,
+            rate: rate
+          };
+          
+          // Update last votes
+          lastVotes[sub.id] = extracted.votes;
+        });
+        
+        // Push history
+        const label = new Date().toLocaleTimeString();
+        historyLabels.push(label);
+        
+        SUBMISSIONS.forEach(sub => {
+          historyData[sub.id].push(data[sub.id].votes ?? null);
+        });
+        
+        // Keep history limited to e.g. 200 points
+        if(historyLabels.length > 200){ 
+          historyLabels.shift(); 
+          SUBMISSIONS.forEach(sub => {
+            historyData[sub.id].shift();
+          });
+        }
+
+        // Update chart
+        chart.data.labels = historyLabels.slice();
+        SUBMISSIONS.forEach((sub, index) => {
+          chart.data.datasets[index].data = historyData[sub.id].slice();
+        });
+        chart.update('none');
+
+        // Update UI elements
+        updateUI(data);
+
+        // Update last time
+        lastTime = now;
+
+        const elapsedMs = Math.round(performance.now() - startTime);
+        statusEl.innerText = `OK — ${elapsedMs}ms`;
+        
+        // Create summary log
+        let summary = "";
+        SUBMISSIONS.forEach(sub => {
+          if (summary) summary += " | ";
+          const subData = data[sub.id];
+          summary += `${sub.name}: ${subData.votes ?? '-'} (${subData.delta >= 0 ? '+' + subData.delta : subData.delta})`;
+        });
+        clog(`${summary} — ${elapsedMs}ms`);
+        
+      }catch(err){
+        statusEl.innerText = 'Error: ' + err.message;
+        clog('Error in poll: ' + err.message);
+      }
+    }
+
+    // start interval
+    (async function startLoop(){
+      // Create submission cards first
+      createSubmissionCards();
+      
+      // first poll immediately
+      await pollOnce();
+      setInterval(pollOnce, INTERVAL_MS);
+    })();
+
+  })();
+  </script>
 </body>
 </html>
